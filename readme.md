@@ -1,4 +1,10 @@
-A markdown -> html generator for several purposes: 
+> Right now this is mostly a placeholder repo
+
+A markdown -> html generator that ties together `markdown`, `pygments`, 
+`python-liquid` and a few other things for static website and standalone
+static page generation.
+
+Use cases include:
 
 1. Generating single webpages with default styling, suitable for notes on 
 math and programming. So, syntax highlighting and LaTeX -> MathML or KaTeX by 
