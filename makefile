@@ -4,7 +4,9 @@ run:
 	python -m md2html.md2html
 
 build: 
-	pyinstaller -F main.py
+	pyinstaller -F main.py -n md2html
 
 clean:
-	rm -r build dist md2html.spec
+	-rm -r build 
+	-rm -r dist 
+	-rm md2html.spec
