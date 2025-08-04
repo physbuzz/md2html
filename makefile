@@ -8,5 +8,4 @@ build:
 
 clean:
 	-rm -r build 
-	-rm -r dist 
 	-rm md2html.spec
