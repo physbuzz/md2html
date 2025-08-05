@@ -8,4 +8,4 @@ build:
 
 clean:
 	-rm -r build 
-	-rm md2html.spec
+	-rm main.spec
