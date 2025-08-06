@@ -2,4 +2,5 @@ build
 .venv
 *.spec
 *.swp
+tests
 __pycache__

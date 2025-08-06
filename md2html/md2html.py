@@ -155,7 +155,7 @@ def calculate_output_path(config: Config, input_path: Path) -> Path:
     if config.output_dir is None:
         output_file=input_path 
     else:
-        output_file=config.output_dir/input_path.relative_to(config.base_input_path)
+        output_file=config.output_dir/input_path.resolve().relative_to(config.base_input_path.resolve())
 
     if output_file.suffix.lower() == '.md':
         output_file = output_file.with_suffix('.html')
@@ -178,9 +178,10 @@ def handle_target(path: Path, config: Config, graph: BuildGraph):
     if not path.exists():
         print(f"Error: Input file {path} does not exist.", file=sys.stderr)
         sys.exit(1)
+    if should_ignore_path(config, path) and not config.single_file_mode:
+        return
     
     if path.is_file():
-
         output_path = calculate_output_path(config, path)
         # Override for single file mode with file output
         if config.single_file_mode and config.output_dir and config.output_dir.suffix:
@@ -197,7 +198,7 @@ def handle_target(path: Path, config: Config, graph: BuildGraph):
             sys.exit(1)
         if config.output_dir \
             and path.resolve() == config.output_dir.resolve() \
-            and (config.base_input_path in config.output_dir.parents):
+            and (config.base_input_path.resolve() in config.output_dir.resolve().parents):
             return
         
         for item in path.iterdir():
