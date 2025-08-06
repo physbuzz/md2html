@@ -8,7 +8,7 @@ build:
 
 # PYTHONPATH=~/dev/md2html python -m md2html.md2html file\ with\ space.md
 test:
-	python -m md2html.test
+	python -m md2html.test --quiet
 
 clean:
 	-rm -r build 
