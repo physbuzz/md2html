@@ -8,23 +8,46 @@ import sys
 import json
 import os
 from .config import Config
+from .markdown_preprocessing import get_markdown_dependencies, parse_markdown_metadata
 
 class BuildTargetType(Enum):
     MARKDOWN = 'markdown'
     COPY = 'copy'
+    DEPENDENCY = 'dependency'
+    EXECUTE = 'execute'
 # not handled currently:
 #     HTML = 'html'
-#     EXECUTE = 'execute'
-#     DEPENDENCY = 'dependency'
 
 @dataclass
 class BuildTarget:
     node_type: BuildTargetType
     input_path: Path
     output_path: Optional[Path] = None
+    dependencies: List[Dict[str, Any]] = field(default_factory=list)
+    frontmatter: Dict[str, Any] = field(default_factory=dict)
+@dataclass
+class WatchTargets:
+    watched_files: Set[Path] = field(default_factory=set)
+    
+    def add_watched_file(self, file_path: Path):
+        """Add a file that should be monitored for changes"""
+        self.watched_files.add(file_path.resolve())
+    
+    def should_watch_file(self, file_path: Path) -> bool:
+        """Check if a specific file should trigger a rebuild"""
+        return file_path.resolve() in self.watched_files
+    
+    def get_watch_dirs(self) -> Set[Path]:
+        """Get the set of directories that watchdog should monitor"""
+        watch_dirs = set()
+        for file_path in self.watched_files:
+            watch_dirs.add(file_path.parent)
+        return watch_dirs
+
 @dataclass
 class BuildTargets:
     nodes: Dict[Path, BuildTarget] = field(default_factory=dict)
+    watch_targets: WatchTargets = field(default_factory=WatchTargets)
 
     def node_exists(self, path: Path) -> bool:
         return path in self.nodes
@@ -32,6 +55,16 @@ class BuildTargets:
         if self.node_exists(node.input_path):
             print(f"Error: Node for {node.input_path} already exists in build targets", file=sys.stderr)
             sys.exit(1)
+        
+        # Parse metadata for markdown files
+        if node.node_type == BuildTargetType.MARKDOWN and node.input_path.suffix.lower() == '.md':
+            try:
+                metadata = parse_markdown_metadata(node.input_path)
+                node.dependencies = metadata.dependencies
+                node.frontmatter = metadata.yaml_frontmatter
+            except Exception as e:
+                print(f"Warning: Could not parse metadata from {node.input_path}: {e}", file=sys.stderr)
+        
         self.nodes[node.input_path] = node
     def get_json_str(self) -> str:
         json_data = {
@@ -39,7 +72,9 @@ class BuildTargets:
                 {
                     "input": str(node.input_path),
                     "output": str(node.output_path) if node.output_path else None,
-                    "type": node.node_type.value
+                    "type": node.node_type.value,
+                    "dependencies": node.dependencies if node.dependencies else [],
+                    "frontmatter": node.frontmatter if node.frontmatter else {}
                 }
                 for node in self.nodes.values()
             ]
@@ -74,9 +109,11 @@ def handle_target(path: Path, config: Config, target_list: BuildTargets):
 
         if path.suffix.lower() == '.md':
             target_list.add_node(BuildTarget(BuildTargetType.MARKDOWN,path,output_path))
+            target_list.watch_targets.add_watched_file(path)
         else:
             if output_path.resolve() != path.resolve():
                 target_list.add_node(BuildTarget(BuildTargetType.COPY,path,output_path))
+                target_list.watch_targets.add_watched_file(path)
     elif path.is_dir():
         if not config.recursive:
             print(f"Error: {path} is a directory, but recursive mode is not enabled. (Maybe try ./* instead of .)", file=sys.stderr)

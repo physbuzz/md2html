@@ -10,6 +10,9 @@ build:
 test:
 	python -m md2html.test --quiet
 
+test-keep:
+	python -m md2html.test --quiet --keep-files
+
 clean:
 	-rm -r build 
 	-rm main.spec

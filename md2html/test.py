@@ -12,10 +12,12 @@ from pathlib import Path
 # Import test suites
 from .testsuite import TestContext
 from .testfilepaths import run_filepath_tests
+from .testpreprocessing import run_preprocessing_tests
 
 # Registry of available test suites
 TEST_SUITES = {
     'filepaths': run_filepath_tests,
+    'preprocessing': run_preprocessing_tests,
     # Future: 'server': run_server_tests,
     # Future: 'watch': run_watch_tests,
 }
@@ -26,7 +28,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Available test suites:
-  filepaths    File path and DAG generation tests (default)
+  filepaths      File path and DAG generation tests (default)
+  preprocessing  Markdown preprocessing and dependency parsing tests
 
 Examples:
   python -m md2html.test                    # Run all test suites

@@ -30,6 +30,7 @@ Options:
     -n, --no-overwrite              Don't overwrite existing files
     -v, --verbose                    Verbose output
     --d, --dry-run                    Dry run mode (output build DAG as JSON)
+    --templates PATH                 Templates directory (default: ./templates, then bundle/templates)
 
 Examples:
     md2html note.md                  # Creates note.html (overwrites)
@@ -61,7 +62,8 @@ class Config:
     execute: bool = False
     force_overwrite: bool = True
     verbose: bool = False
-    dry_run: bool = False  
+    dry_run: bool = False
+    templates_dir: Optional[Path] = None  
     def calculate_output_path(self, input_path: Path) -> Path:
         if not (self.base_input_path.resolve() in input_path.resolve().parents):
             print(f"Error: {input_path} is not under base input path {self.base_input_path}", file=sys.stderr)
@@ -76,6 +78,46 @@ class Config:
             output_file = output_file.with_suffix('.html')
         
         return output_file
+
+    def find_template(self, template_name: str) -> Optional[Path]:
+        """Find a template file, searching in order:
+        1. User-specified templates directory
+        2. ./templates
+        3. bundle_root/templates
+        
+        Returns None if template is not found in any location.
+        """
+        search_paths = []
+        
+        # 1. User-specified templates directory
+        if self.templates_dir:
+            search_paths.append(self.templates_dir)
+        
+        # 2. ./templates (relative to where md2html was invoked)
+        search_paths.append(self.invoked_from / "templates")
+        
+        # 3. bundle_root/templates (bundled templates)
+        search_paths.append(self.bundle_root / "templates")
+        
+        for templates_dir in search_paths:
+            if templates_dir.exists() and templates_dir.is_dir():
+                template_path = templates_dir / template_name
+                if template_path.exists() and template_path.is_file():
+                    return template_path
+        
+        return None
+
+    def get_templates_search_paths(self) -> List[Path]:
+        """Get the list of directories that will be searched for templates"""
+        search_paths = []
+        
+        if self.templates_dir:
+            search_paths.append(self.templates_dir)
+        
+        search_paths.append(self.invoked_from / "templates")
+        search_paths.append(self.bundle_root / "templates")
+        
+        return search_paths
 
 def parse_args(argv: List[str]) -> Tuple[Config, List[str]]:
     invoked_from = Path.cwd()
@@ -99,6 +141,7 @@ def parse_args(argv: List[str]) -> Tuple[Config, List[str]]:
     parser.add_argument('-n', '--no-overwrite', action='store_true', help="Don't overwrite existing files")
     parser.add_argument('-v', '--verbose', action='store_true', help="Verbose output")
     parser.add_argument('-d', '--dry-run', action='store_true', help="Dry run mode (output build DAG as JSON)")
+    parser.add_argument('--templates', type=Path, help="Templates directory (default: ./templates, then bundle/templates)")
     parser.add_argument('inputs', nargs='*', help="Input files or directories")  # Positional args
 
     args = parser.parse_args(argv)
@@ -119,5 +162,6 @@ def parse_args(argv: List[str]) -> Tuple[Config, List[str]]:
     config.force_overwrite = not args.no_overwrite
     config.verbose = args.verbose
     config.dry_run = args.dry_run
+    config.templates_dir = args.templates
 
     return config, args.inputs  # args.inputs is the list of positional args
