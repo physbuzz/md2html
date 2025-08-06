@@ -236,7 +236,8 @@ def main():
     for path in args:
         handle_target(path, config, graph)
     
-    print(graph.graph_json())
+    if config.dry_run:
+        print(graph.graph_json())
 
 if __name__ == "__main__":
     main()
