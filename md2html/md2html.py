@@ -2,8 +2,10 @@ from dataclasses import dataclass, field
 from collections import defaultdict, deque
 from typing import List, Dict, Set, Tuple, Optional, Any
 from pathlib import Path
+from enum import Enum
 import argparse
 import sys
+import json
 import os
 from . import cli
 
@@ -28,6 +30,7 @@ Options:
     -e, --execute                    Execute embedded code blocks
     -n, --no-overwrite              Don't overwrite existing files
     -v, --verbose                    Verbose output
+    --d, --dry-run                    Dry run mode (output build DAG as JSON)
 
 Examples:
     md2html note.md                  # Creates note.html (overwrites)
@@ -59,6 +62,45 @@ class Config:
     execute: bool = False
     force_overwrite: bool = True
     verbose: bool = False
+    dry_run: bool = False  
+
+
+class BuildNodeType(Enum):
+    MARKDOWN = 'markdown'
+    COPY = 'copy'
+# not handled currently:
+#     HTML = 'html'
+#     EXECUTE = 'execute'
+#     DEPENDENCY = 'dependency'
+
+@dataclass
+class BuildNode:
+    node_type: BuildNodeType
+    input_path: Path
+    output_path: Optional[Path] = None
+@dataclass
+class BuildGraph:
+    nodes: Dict[Path, BuildNode] = field(default_factory=dict)
+
+    def node_exists(self, path: Path) -> bool:
+        return path in self.nodes
+    def add_node(self, node: BuildNode):
+        if self.node_exists(node.input_path):
+            print(f"Error: Node for {node.input_path} already exists in the graph", file=sys.stderr)
+            sys.exit(1)
+        self.nodes[node.input_path] = node
+    def graph_json(self) -> str:
+        graph_data = {
+            "nodes": [
+                {
+                    "input": str(node.input_path),
+                    "output": str(node.output_path) if node.output_path else None,
+                    "type": node.node_type.value
+                }
+                for node in self.nodes.values()
+            ]
+        }
+        return json.dumps(graph_data, indent=2)
 
 def parse_args(argv: List[str]) -> Tuple[Config, List[str]]:
     invoked_from = Path.cwd()
@@ -81,6 +123,7 @@ def parse_args(argv: List[str]) -> Tuple[Config, List[str]]:
     parser.add_argument('-e', '--execute', action='store_true', help="Execute embedded code blocks")
     parser.add_argument('-n', '--no-overwrite', action='store_true', help="Don't overwrite existing files")
     parser.add_argument('-v', '--verbose', action='store_true', help="Verbose output")
+    parser.add_argument('-d', '--dry-run', action='store_true', help="Dry run mode (output build DAG as JSON)")
     parser.add_argument('inputs', nargs='*', help="Input files or directories")  # Positional args
 
     args = parser.parse_args(argv)
@@ -100,6 +143,7 @@ def parse_args(argv: List[str]) -> Tuple[Config, List[str]]:
     config.execute = args.execute
     config.force_overwrite = not args.no_overwrite
     config.verbose = args.verbose
+    config.dry_run = args.dry_run
 
     return config, args.inputs  # args.inputs is the list of positional args
 
@@ -130,7 +174,7 @@ def should_ignore_path(config: Config, file_path: Path) -> bool:
     if file_path.name.startswith('_') or file_path.name.startswith('.'):
         return True
     return False
-def handle_target(path: Path, config: Config, graph):
+def handle_target(path: Path, config: Config, graph: BuildGraph):
     if not path.exists():
         print(f"Error: Input file {path} does not exist.", file=sys.stderr)
         sys.exit(1)
@@ -143,12 +187,10 @@ def handle_target(path: Path, config: Config, graph):
             output_path = config.output_dir
 
         if path.suffix.lower() == '.md':
-            print("{\"buildtype\": \"md\", \"input\": ", 
-                  path, ", \"output\": ", output_path, "},")
+            graph.add_node(BuildNode(BuildNodeType.MARKDOWN,path,output_path))
         else:
             if output_path.resolve() != path.resolve():
-                print("{\"buildtype\": \"copy\", \"input\": ", 
-                    path, ", \"output\": ", output_path, "},")
+                graph.add_node(BuildNode(BuildNodeType.COPY,path,output_path))
     elif path.is_dir():
         if not config.recursive:
             print(f"Error: {path} is a directory, but recursive mode is not enabled. (Maybe try ./* instead of .)", file=sys.stderr)
@@ -188,13 +230,12 @@ def main():
     else:
         config.base_input_path = config.invoked_from
 
-    # graph = BuildGraph()
+    graph = BuildGraph()
     
     for path in args:
-        handle_target(path, config, None)
+        handle_target(path, config, graph)
     
-    # Execute the build
-    # build_graph(config, graph)
+    print(graph.graph_json())
 
 if __name__ == "__main__":
     main()
