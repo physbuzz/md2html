@@ -4,11 +4,35 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "md2html"
-version = "0.0.0"
+version = "3.0.0"
 description = "Markdown notes, executable snippets, and math for HTML pages and static sites."
 readme = "readme.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["mistune>=3.0,<4", "python-liquid>=2.3,<3", "PyYAML>=6", "Pygments>=2.15", "latex2mathml>=3.81", "ziamath>=0.13", "watchdog>=4", "psutil>=5.9", "rcssmin>=1.1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "beautifulsoup4>=4", "ruff"]
+build = ["pyinstaller>=6"]
+
+[project.scripts]
+md2html = "md2html.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+md2html = ["assets/*.css", "default_templates/*.html", "scripts/*.mjs", "scripts/*.rb"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore:path is deprecated.*:DeprecationWarning:ziamath.*"]
+
+[tool.setuptools.data-files]
+"share/md2html" = ["readme.md"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

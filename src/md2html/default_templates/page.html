@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="{{ page.lang | default: 'en' }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page.title }}</title>
+  <script>
+(function () {
+  var groups = ["theme", "width", "type", "text"];
+  var defaults = { theme: "system", width: "normal", type: "sans", text: "normal" };
+  var allowed = {
+    theme: { system: true, light: true, dark: true },
+    width: { normal: true, wide: true, compact: true },
+    type: { sans: true, serif: true },
+    text: { small: true, normal: true, large: true }
+  };
+  var namePrefix = "md2html-reader:";
+
+  function readWindowState() {
+    if (!window.name || window.name.indexOf(namePrefix) !== 0) return {};
+    try {
+      return JSON.parse(window.name.slice(namePrefix.length)) || {};
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function readSetting(name) {
+    var value = null;
+    try {
+      value = localStorage.getItem("md2html-reader-" + name);
+    } catch (error) {}
+    if (!value) value = readWindowState()[name];
+    return allowed[name][value] ? value : null;
+  }
+
+  groups.forEach(function (name) {
+    var saved = readSetting(name);
+    if (saved && saved !== defaults[name]) {
+      document.documentElement.dataset[name] = saved;
+    }
+  });
+})();
+  </script>
+  {% for font in md2html.font_preloads %}<link rel="preload" href="{{ font }}" as="font" type="font/woff2" crossorigin>
+  {% endfor %}
+  {% for stylesheet in md2html.page_stylesheets %}<link rel="stylesheet" href="{{ stylesheet }}">
+  {% endfor %}
+  {% if md2html.css %}<style>
+{{ md2html.css }}
+  </style>{% endif %}
+  {% for stylesheet in md2html.math_stylesheets %}<link rel="stylesheet" href="{{ stylesheet }}">
+  {% endfor %}
+  {% if md2html.math_css %}<style>
+{{ md2html.math_css }}
+  </style>{% endif %}
+  {% for stylesheet in md2html.inline_stylesheets %}<style>
+{{ stylesheet }}
+  </style>{% endfor %}
+  {% for stylesheet in md2html.stylesheets %}<link rel="stylesheet" href="{{ stylesheet }}">
+  {% endfor %}
+  {% if md2html.mathjax_src %}<script>{{ md2html.mathjax_config }}</script>
+  <script id="MathJax-script" defer src="{{ md2html.mathjax_src }}"></script>{% endif %}
+</head>
+<body>
+  <main class="container">
+    <header class="page-header">
+      <div class="page-title">{{ page.name }}</div>
+      <details class="reader-widget">
+        <summary aria-label="reader controls" title="Reader controls">Aa</summary>
+        <form aria-label="reader controls">
+          <fieldset>
+            <legend>Theme</legend>
+            <label><input id="theme-system" name="theme" value="system" type="radio" checked> system</label>
+            <label><input id="theme-light" name="theme" value="light" type="radio"> light</label>
+            <label><input id="theme-dark" name="theme" value="dark" type="radio"> dark</label>
+          </fieldset>
+          <fieldset>
+            <legend>Measure</legend>
+            <label><input id="width-normal" name="width" value="normal" type="radio" checked> normal</label>
+            <label><input id="width-wide" name="width" value="wide" type="radio"> wide</label>
+            <label><input id="width-compact" name="width" value="compact" type="radio"> compact</label>
+          </fieldset>
+          <fieldset>
+            <legend>Type</legend>
+            <label><input id="type-sans" name="type" value="sans" type="radio" checked> sans</label>
+            <label><input id="type-serif" name="type" value="serif" type="radio"> serif</label>
+          </fieldset>
+          <fieldset>
+            <legend>Text</legend>
+            <label><input id="text-small" name="text" value="small" type="radio"> small</label>
+            <label><input id="text-normal" name="text" value="normal" type="radio" checked> normal</label>
+            <label><input id="text-large" name="text" value="large" type="radio"> large</label>
+          </fieldset>
+        </form>
+      </details>
+    </header>
+    <article class="page-content">
+{{ content }}
+    </article>
+  </main>
+  {% if md2html.has_math_copy %}{% include "math-copy.html" %}{% endif %}
+  <script>
+(function () {
+  var groups = ["theme", "width", "type", "text"];
+  var defaults = { theme: "system", width: "normal", type: "sans", text: "normal" };
+  var allowed = {
+    theme: { system: true, light: true, dark: true },
+    width: { normal: true, wide: true, compact: true },
+    type: { sans: true, serif: true },
+    text: { small: true, normal: true, large: true }
+  };
+  var namePrefix = "md2html-reader:";
+
+  function apply(name, value) {
+    if (value === defaults[name]) {
+      delete document.documentElement.dataset[name];
+      return;
+    }
+    document.documentElement.dataset[name] = value;
+  }
+
+  function readWindowState() {
+    if (!window.name || window.name.indexOf(namePrefix) !== 0) return {};
+    try {
+      return JSON.parse(window.name.slice(namePrefix.length)) || {};
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function saveWindowState(name, value) {
+    var state = readWindowState();
+    state[name] = value;
+    try {
+      window.name = namePrefix + JSON.stringify(state);
+    } catch (error) {}
+  }
+
+  function readSetting(name) {
+    var value = null;
+    try {
+      value = localStorage.getItem("md2html-reader-" + name);
+    } catch (error) {
+      value = null;
+    }
+    if (!value) value = readWindowState()[name];
+    return allowed[name][value] ? value : null;
+  }
+
+  function saveSetting(name, value) {
+    try {
+      localStorage.setItem("md2html-reader-" + name, value);
+    } catch (error) {}
+    saveWindowState(name, value);
+  }
+
+  groups.forEach(function (name) {
+    var saved = readSetting(name);
+    if (saved) apply(name, saved);
+  });
+
+  document.addEventListener("DOMContentLoaded", function () {
+    groups.forEach(function (name) {
+      var saved = readSetting(name);
+      var inputs = Array.prototype.slice.call(document.querySelectorAll('input[name="' + name + '"]'));
+      inputs.forEach(function (input) {
+        if (saved && input.value === saved) input.checked = true;
+        input.addEventListener("change", function () {
+          if (!input.checked) return;
+          apply(name, input.value);
+          saveSetting(name, input.value);
+          if (window.MathJax && window.MathJax.typesetPromise) {
+            window.MathJax.typesetPromise().catch(function () {});
+          }
+        });
+      });
+    });
+  });
+})();
+  </script>
+</body>
+</html>

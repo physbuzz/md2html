@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="{{ page.lang | default: 'en' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page.title }}</title>
+  {% for font in md2html.font_preloads %}<link rel="preload" href="{{ font }}" as="font" type="font/woff2" crossorigin>
+  {% endfor %}
+  {% for stylesheet in md2html.page_stylesheets %}<link rel="stylesheet" href="{{ stylesheet }}">
+  {% endfor %}
+  {% if md2html.css %}<style>
+{{ md2html.css }}
+  </style>{% endif %}
+  {% for stylesheet in md2html.math_stylesheets %}<link rel="stylesheet" href="{{ stylesheet }}">
+  {% endfor %}
+  {% if md2html.math_css %}<style>
+{{ md2html.math_css }}
+  </style>{% endif %}
+  {% for stylesheet in md2html.inline_stylesheets %}<style>
+{{ stylesheet }}
+  </style>{% endfor %}
+  {% for stylesheet in md2html.stylesheets %}<link rel="stylesheet" href="{{ stylesheet }}">
+  {% endfor %}
+  {% if md2html.mathjax_src %}<script>{{ md2html.mathjax_config }}</script>
+  <script defer src="{{ md2html.mathjax_src }}"></script>{% endif %}
+</head>
+<body>
+  <main>
+{{ content }}
+  </main>
+  {% if md2html.has_math_copy %}{% include "math-copy.html" %}{% endif %}
+</body>
+</html>

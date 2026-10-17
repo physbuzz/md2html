@@ -1,0 +1,142 @@
+.math.display-math {
+  display: block;
+  max-width: 100%;
+  margin: .65rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.math.inline-math {
+  white-space: nowrap;
+}
+
+.math-rendered {
+  user-select: none;
+}
+
+.math-copy-source {
+  position: absolute;
+  display: inline-block;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  color: transparent;
+  font-size: 0;
+  line-height: 0;
+  white-space: pre;
+}
+
+.math-mathjax-chtml,
+.math-svg,
+.math-mathml {
+  color: inherit;
+}
+
+.math-mathjax-chtml .math-rendered {
+  display: inline;
+  max-width: 100%;
+}
+
+.math.inline-math.math-mathjax-chtml mjx-container {
+  color: inherit;
+  vertical-align: baseline;
+}
+
+.math-mathjax-chtml mjx-table { display: inline-block; }
+.math-mathjax-chtml mjx-itable { display: inline-table; }
+.math-mathjax-chtml mjx-mtr { display: table-row; }
+.math-mathjax-chtml mjx-mtd { display: table-cell; }
+
+.math.display-math.math-mathjax-chtml,
+.math.display-math.math-svg,
+.math.display-math.math-mathml {
+  text-align: center;
+}
+
+.math.display-math.math-mathjax-chtml .math-rendered,
+.math.display-math.math-mathml .math-rendered {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+}
+
+.math.display-math.math-mathjax-chtml mjx-container[display="true"],
+.math.display-math.math-mathjax mjx-container[display="true"] {
+  margin: 0;
+}
+
+.math.display-math.math-mathjax-chtml mjx-container[display="true"] > mjx-math {
+  min-width: max-content;
+}
+
+.math-svg .math-rendered {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.math.inline-math.math-svg .math-rendered {
+  display: inline;
+  line-height: 0;
+}
+
+.math.inline-math.math-svg .md2html-math-svg-image {
+  width: auto;
+  height: var(--md2html-math-svg-inline-height, 1.15em);
+  max-width: 100%;
+  color: inherit;
+  fill: currentColor;
+  vertical-align: var(--md2html-math-svg-inline-align, -.17em);
+}
+
+.math.display-math.math-svg .math-rendered {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  line-height: 0;
+  text-align: center;
+}
+
+.math.display-math.math-svg .md2html-math-svg-image {
+  display: block;
+  width: auto;
+  height: var(--md2html-math-svg-display-height, auto);
+  max-width: none;
+  margin-inline: auto;
+  color: inherit;
+  fill: currentColor;
+  vertical-align: middle;
+}
+
+.math-mathml .math-rendered {
+  display: inline;
+  max-width: 100%;
+}
+
+.math.inline-math.math-mathml .md2html-mathml {
+  display: inline-block;
+  max-width: 100%;
+  color: inherit;
+  font-size: 1em;
+  vertical-align: baseline;
+}
+
+.math.display-math.math-mathml .md2html-mathml {
+  display: inline-block;
+  max-width: none;
+  color: inherit;
+  font-size: calc(1em * var(--md2html-mathml-display-scale, 1.12));
+  vertical-align: middle;
+}
+
+@media (max-width: 700px) {
+  .math.inline-math {
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    vertical-align: bottom;
+  }
+}

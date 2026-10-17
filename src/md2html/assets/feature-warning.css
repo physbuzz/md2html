@@ -1,0 +1,6 @@
+.warning {
+  margin: 1rem 0;
+  padding: .75rem 1rem;
+  border-left: 4px solid var(--md2html-warning-border);
+  background: var(--md2html-warning-bg);
+}

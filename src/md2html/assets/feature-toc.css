@@ -1,0 +1,8 @@
+.table-of-contents { margin: 0; line-height: 1; }
+.toc-list { margin: 0; padding-left: 20px; }
+.toc-list ul { margin-bottom: 2px; }
+.toc-list li { margin-bottom: 2px; }
+.exercise-container { display: inline-block; margin-top: 2px; line-height: 1.2; }
+.exercise-list { display: inline; margin: 0; padding-left: 0; font-size: .95em; }
+.exercise-list span:not(:last-child)::after { content: ", "; color: var(--md2html-muted, currentColor); }
+.toc-exercises { font-style: italic; color: var(--md2html-muted, currentColor); }

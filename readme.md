@@ -1,7 +1,5 @@
 # md2html
 
-> Project status: groundwork only; the command is not implemented yet. The usage below describes the intended interface, pending implementation and verification.
-
 `md2html` turns Markdown notes into standalone HTML pages, a small static site, or Markdown for Jekyll to render. It's aimed at quick math notes, so on my personal computer I can do `md2html notes.md && upload notes.html` and have a shareable link to a beautiful standalone webpage ready. By default this is an offline standalone page with static CommonHTML and the relevant math fonts embedded, but you can configure it however. While I'm writing textbook notes, I'll have `md2html -erf sicp -o html --serve` running in the background, so I can watch the page update as I code and take notes.
 
 It is heavily Jekyll inspired, so if you want to try rendering a Jekyll site you can with `--jekyll`. If you want to parse the little widgets and features and output Markdown to later be rendered by Jekyll, use `--jekyll-markdown`.
@@ -53,11 +51,12 @@ All options:
 - `-o, --output PATH`: output file or directory. JSON: `"output"`.
 - `-e, --execute`: run executable examples and show their program output below the source. JSON: `"execute": true`.
 - `-r, --recursive`: include nested documents in `pages` mode. Site, Jekyll, and Jekyll Markdown modes are recursive by default. JSON: `"recursive": true`.
-- `-f, --force`: rebuild pages that would otherwise be skipped. JSON: `"force": true`.
+- `-f, --force`: explicitly request an HTML rebuild. Every build renders all pages; this flag does not rerun cached snippets. JSON: `"force": true`.
 - `-F, --force-execution`: rerun executable examples even when their program output is already cached. Requires `--execute`; `-eF` reruns everything. JSON: `"force_execution": true`.
-- `-s, --serve`: build, rebuild on change, and serve the generated pages on a loopback-only (`127.0.0.1`) server.
+- `-s, --serve`: build, rebuild on change, and serve the generated pages. The default bind address is `127.0.0.1`.
 - `-w, --watch`: rebuild on change without starting a server.
 - `-p, --port N`: preview server port. The default is 8000.
+- `--host ADDRESS`: preview server bind address. Use `--serve --host 0.0.0.0 --port 8000` for Docker previews. JSON: `"host"`.
 - `--config PATH`: select a JSON configuration file explicitly.
 - `--output-mode MODE`: `pages`, `site`, `jekyll`, or `jekyll-markdown`. You can also pass `--jekyll` and `--jekyll-markdown` directly. JSON: `"output_mode"`.
 - `--templates DIR`: template search directory; repeat to add more. JSON: `"templates"`.
@@ -74,12 +73,17 @@ All options:
 - `--math BACKEND`: `mathjax`, `mathjax-chtml` (default), `svg`, `mathml`, or `raw`. JSON: `"math": {"backend": ...}`.
 - `--math-fonts MODE`: CommonHTML font placement: `auto`, `local`, `remote`, `all`, `inline`, or `none`. JSON: `"math": {"chtml_fonts": ...}`.
 - `--timeout SECONDS`: time limit for each executed example. The default is 120. JSON: `"timeout"`.
-- `--clean`: remove a site output directory before building. It does not apply to independent page builds. JSON: `"clean": true`.
+- `--clean`: remove the output directory before building in `site` or `jekyll` mode. It does not apply to independent page builds. JSON: `"clean": true`.
 - `--version`, `--help`.
 
-Command-line settings override JSON settings.
+Command-line settings override JSON settings. A running watch or serve command
+keeps its configuration fixed; restart it after changing configuration. Each
+change rebuilds the complete project, including site listings, while reusing
+successful snippet output. Deleted source pages may leave their HTML behind;
+unused renderer assets and execution workspaces are retained until removed.
+A single-file `--serve` command without `-o` uses `.md2html-preview/`.
 
-Output rules: one Markdown file with no `-o` writes the page beside the source; several inputs with `-o public` keep their relative paths below `public`. When `-o` moves a page, referenced local images, stylesheets, and files linked by `@src` are copied so their links still work. HTML/HTM/XML inputs get Liquid only — no Markdown, no directives — and keep their suffixes.
+Output rules: one Markdown file with no `-o` writes the page beside the source; several inputs with `-o public` keep their relative paths below `public`. When `-o` moves a page, referenced local images, stylesheets, and files linked by `@src` are copied so their links still work. HTML/HTM/XML inputs get Liquid only — no Markdown, no directives — and keep their suffixes. Give HTML/HTM/XML inputs and single-file Jekyll Markdown exports a distinct `-o` destination.
 
 ## Configuration
 With no arguments, `md2html` searches for `md2html.json` in the current directory and its parents. Use `--config` to select another file. Paths inside it are resolved relative to that file's directory.
@@ -127,7 +131,7 @@ int main() { std::cout << "Hello, world!\n"; }
 @src-end
 ```
 
-`@src` and `@src-begin` accept `collapsible`, `expanded`, `collapsed`, and `noexecute`. Bad TeX, missing includes, and failed runs warn and otherwise leave the page buildable; only invalid front matter and mismatched `@src-begin`/`@src-end` markers stop the build.
+`@src` and `@src-begin` accept `collapsible`, `expanded`, `collapsed`, and `noexecute`. Bad TeX, missing includes, and failed runs warn and otherwise leave the page buildable; invalid front matter and mismatched `@src-begin`/`@src-end` markers stop the build. Invalid configuration, layouts, and conflicting output paths also stop the build.
 
 ## Executable Snippets
 The best and least safe part about md2html is its ability to execute snippets when the `-e` or `--execute` flag is enabled. There are defaults for python, shell, JavaScript, Racket, Wolfram Language, C, and C++, but you can add custom commands in `md2html.json`. eg:
@@ -148,6 +152,14 @@ Commands run through `sh` in the page's directory. For `@src(src.cpp)` in
 `.md2html-cache/file/cpp-src-HASH/src.md2html-out`, and `{output}` is
 `.md2html-cache/file/cpp-src-HASH/output.txt`.
 
+`{python}` selects the current Python interpreter, or `python3`/`python` on
+PATH for the packaged executable. `{filename}` aliases `{source}`, and
+`{sourcedir}` is the source file's directory. Placeholder values are shell
+quoted. Commands require a POSIX shell and the selected language's toolchain.
+On timeout, the command and its descendants are stopped; incomplete runs are
+not cached. Saved successful output can also be displayed without `--execute`;
+`noexecute` suppresses both running and displaying cached output.
+
 Note: some effort is taken to automatically invalidate the cache when the source code changes. However if you have `#include "header.h"` and change the header, this won't be detected, nor if you change a compilation command! In this case, force recompilation using the flag `-F`.
 
 ## Math
@@ -158,20 +170,26 @@ There are a few different math backends (choose with `--math`):
 - `svg` is decent, but large file sizes for math heavy documents.
 
 With the `--assets` flag we can decide where math assets (fonts, js) live.
-- `standalone` is the default for single page generation and embeds supported renderer assets in each page. Embedding browser MathJax JavaScript is not implemented; `--math mathjax --assets standalone` warns and uses the CDN instead.
+- `standalone` is the default for single page generation and embeds supported renderer assets in each page. With browser MathJax, `--math mathjax --assets standalone` warns and uses the CDN instead.
 - `shared` writes them to `assets/md2html/` and is the default for multi-page sites.
 - `cdn` links versioned jsDelivr URLs.
 
-The following measurements use the Gaussian-integral stress test. Authored
-figures remain external; the SVG result includes only the 288 generated
-equation SVGs. CDN assets are not included in the HTML size.
+`--math-fonts` controls static CommonHTML font delivery. `auto` follows the
+asset policy: embedded fonts for `standalone`, copied fonts for `shared`, and
+CDN fonts for `cdn`. `inline`, `local`, and `remote` explicitly choose one of
+those deliveries; `all` includes every font using the asset policy's delivery,
+and `none` omits font-face declarations. Only required fonts are preloaded.
+
+The following measurements use `examples/notes.md` with execution enabled
+(eight equations). Sizes are rounded KiB; CDN assets are not included in the
+HTML size. Authored figures remain external.
 
 |Renderer|Asset policy|HTML|Gzipped HTML|
 |---|---|--:|--:|
-|Browser MathJax|CDN|118 KB|21 KB|
-|Static CommonHTML|standalone|848 KB|238 KB|
-|Native MathML|standalone|267 KB|29 KB|
-|Inline SVG|standalone|2,549 KB|346 KB|
+|Browser MathJax|CDN|37 KiB|7 KiB|
+|Static CommonHTML|standalone|294 KiB|190 KiB|
+|Native MathML|standalone|41 KiB|8 KiB|
+|Inline SVG|standalone|101 KiB|20 KiB|
 
 ## Liquid Processor
 
@@ -180,7 +198,10 @@ XML use Liquid without Markdown or directives. Native `site` mode provides
 pages, posts, layouts, includes, tags, pagination, and feeds. `--jekyll` reads
 an existing `_config.yml` and layouts but skips plugins, themes, `_data`, and
 Sass; `--jekyll-markdown` expands md2html directives and leaves the remaining
-Markdown and Liquid for Jekyll.
+Markdown and Liquid for Jekyll. Markdown pages without a `layout` use the
+selected page template in every HTML output mode. Static math backends also
+render in `jekyll` mode; custom layouts must include the relevant `md2html`
+asset fields, as shown by `--example-template -`.
 
 Like Jekyll, dated posts live in `_posts/YYYY-MM-DD-title.md`. Documents
 elsewhere still build normally and are available through `site.pages`.

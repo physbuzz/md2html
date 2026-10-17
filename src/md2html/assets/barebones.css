@@ -1,0 +1,40 @@
+:root {
+  --md2html-border: #8886;
+  --md2html-code-bg: #8882;
+  --md2html-code-header-bg: #8881;
+  --md2html-muted: #666;
+  --md2html-output: #a2148e;
+  --md2html-warning-bg: #fff8c5;
+  --md2html-warning-border: #d29922;
+  --md2html-link: LinkText;
+  --md2html-radius: 4px;
+  --md2html-mono-font: ui-monospace, monospace;
+  color-scheme: light dark;
+  font: 1rem/1.55 system-ui, sans-serif;
+}
+
+body {
+  max-width: 52rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+img,
+video,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+pre {
+  overflow: auto;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --md2html-muted: #aaa;
+    --md2html-output: #f0a7e9;
+    --md2html-warning-bg: #3a3213;
+    --md2html-warning-border: #d5b56c;
+  }
+}

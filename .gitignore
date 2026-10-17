@@ -1,14 +1,37 @@
+# Python environments and generated metadata
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
+
+# Test, lint, and coverage output
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
 .coverage
+.coverage.*
 htmlcov/
+/browser-artifacts/
+/playwright-report/
+/test-results/
+/artifacts/
+
+# Package dependencies and build output
+node_modules/
 build/
 dist/
-node_modules/
+
+# Generated pages, previews, and execution workspaces
 .md2html-cache/
+.md2html-preview/
+.*.md2html-tmp
+/html/
+/_site/
+/markdown/
+/public/
+/examples/*.html
+
+# Editor files
 *.swp
 *.swo

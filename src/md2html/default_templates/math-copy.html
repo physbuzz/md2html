@@ -1,0 +1,16 @@
+<script data-md2html-math-copy>
+(function () {
+  document.addEventListener("copy", function (event) {
+    var selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    var fragment = selection.getRangeAt(0).cloneContents();
+    if (!fragment.querySelector || !fragment.querySelector(".math-copy-source")) return;
+    fragment.querySelectorAll(".math-rendered").forEach(function (node) { node.remove(); });
+    var box = document.createElement("div");
+    box.appendChild(fragment);
+    event.clipboardData.setData("text/plain", box.textContent);
+    event.clipboardData.setData("text/html", box.innerHTML);
+    event.preventDefault();
+  });
+})();
+</script>
