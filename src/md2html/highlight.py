@@ -2,21 +2,39 @@
 
 import html
 
+from mathematica import MathematicaLexer
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
+from pygments.lexer import inherit
 from pygments.lexers import TextLexer, get_lexer_by_name
+from pygments.token import String
 from pygments.util import ClassNotFound
 
 from .config import PACKAGE
 from .execution import ALIASES
+from .highlight_styles import WolframDarkStyle, WolframLightStyle
 from .workers import Worker
+
+
+class WolframLexer(MathematicaLexer):
+    """Include escaped newlines in Wolfram string tokens."""
+
+    tokens = {"strings": [(r"\\\r?\n", String), inherit]}
 
 
 class Highlighter:
     def __init__(self, options):
-        self.worker = (
-            Worker(["ruby", str(PACKAGE / "scripts/rouge.rb")]) if options.highlighter == "rouge" else None
-        )
+        self.worker = None
+        self.lexers = {}
+        self.formatter = HtmlFormatter(nowrap=True)
+        if options.highlighter == "rouge":
+            try:
+                self.worker = Worker(["ruby", str(PACKAGE / "scripts/rouge.rb")])
+            except OSError as error:
+                raise ValueError(
+                    "Rouge highlighting requires Ruby and the rouge gem. Install Ruby and run "
+                    "'gem install --user-install rouge', or use '--highlighter pygments'."
+                ) from error
         light = options.highlighter_style or ("github.light" if self.worker else "default")
         dark = options.highlighter_dark_style or ("github.dark" if self.worker else "github-dark")
         try:
@@ -25,9 +43,11 @@ class Highlighter:
             self.close()
             raise
         self.css = (
-            light_css
+            "@media (prefers-color-scheme: light) {\n"
+            + light_css.replace(".codehilite", 'html:not([data-theme="dark"]) .codehilite')
+            + "\n}\n"
             + "\n@media (prefers-color-scheme: dark) {\n"
-            + dark_css
+            + dark_css.replace(".codehilite", 'html:not([data-theme="light"]) .codehilite')
             + "\n}\n"
             + light_css.replace(".codehilite", 'html[data-theme="light"] .codehilite')
             + dark_css.replace(".codehilite", 'html[data-theme="dark"] .codehilite')
@@ -36,22 +56,36 @@ class Highlighter:
     def style(self, name):
         if self.worker:
             return self.worker.request(style=name)["value"]
-        return HtmlFormatter(style=name).get_style_defs(".codehilite")
+        wolfram = {"default": WolframLightStyle, "github-dark": WolframDarkStyle}.get(name)
+        scope = '.codehilite:not([data-language="wl"])' if wolfram else ".codehilite"
+        css = HtmlFormatter(style=name).get_style_defs(scope)
+        if wolfram:
+            # Layout styles own code-box backgrounds.
+            css += "\n" + "\n".join(
+                HtmlFormatter(style=wolfram).get_token_style_defs('.codehilite[data-language="wl"]')
+            )
+        return css
 
     def code(self, value, language="", fenced=False):
         language = ALIASES.get(language.lower(), language.lower())
         if self.worker:
             tokens = self.worker.request(code=value, language=language)["value"]
         else:
-            try:
-                lexer = get_lexer_by_name(language)
-            except ClassNotFound:
-                lexer = TextLexer()
-            tokens = highlight(value, lexer, HtmlFormatter(nowrap=True))
+            if language not in self.lexers:
+                try:
+                    lexer = WolframLexer() if language in WolframLexer.aliases else get_lexer_by_name(language)
+                except ClassNotFound:
+                    lexer = TextLexer()
+                self.lexers[language] = lexer
+            tokens = highlight(value, self.lexers[language], self.formatter)
         label = "c++" if language == "cpp" else language
         header = f'<div class="code-language">{html.escape(label)}</div>' if fenced and label else ""
         classes = "codehilite fenced-code" if fenced else "codehilite"
-        return f'<div class="{classes}">{header}<pre><code>{tokens}</code></pre></div>\n'
+        language = "wl" if language in WolframLexer.aliases else language
+        return (
+            f'<div class="{classes}" data-language="{html.escape(language)}">'
+            f"{header}<pre><code>{tokens}</code></pre></div>\n"
+        )
 
     def close(self):
         if self.worker:

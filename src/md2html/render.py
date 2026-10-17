@@ -23,7 +23,7 @@ MATH = re.compile(
 def frontmatter(text):
     if not re.match(r"\A---[ \t]*\n", text):
         return {}, text
-    match = re.match(r"\A---[ \t]*\n(.*?)\n---[ \t]*(?:\n|$)", text, re.S)
+    match = re.match(r"\A---[ \t]*\n(.*?)^---[ \t]*(?:\n|$)", text, re.S | re.M)
     if not match:
         raise ValueError("front matter is missing its closing ---")
     metadata = yaml.safe_load(match[1]) or {}
@@ -106,8 +106,9 @@ class Document:
         self.warnings = []
         self.toc_token = self.html.put("")
 
-    def warn(self, message):
-        self.warnings.append(message)
+    def warn(self, message, *, at_end=True):
+        if at_end:
+            self.warnings.append(message)
         self.build.warnings.append(f"{self.page.source}: {message}")
         self.features.add("warning")
 
@@ -135,9 +136,13 @@ class Document:
             markup = f'<details class="collapsible-code"{opened}><summary class="code-summary"><span>{label}</span><span class="expand-hint">(click to expand)</span></summary>{markup}</details>'
         else:
             markup = f'<div class="code-header">{label}</div>{markup}'
-        output = execution.run(self.options, self.page.source, source, code, language, flags, self.warn)
+        warnings = []
+        output = execution.run(self.options, self.page.source, source, code, language, flags, warnings.append)
         if output is not None:
             markup += f'<div class="code-output"><span>Output:</span><pre>{html.escape(output)}</pre></div>'
+        for warning in warnings:
+            self.warn(warning, at_end=False)
+            markup += f'<aside class="warning">{html.escape(warning)}</aside>'
         classes = "code-box" if source else "code-box inline-source"
         return self.block(f'<div class="{classes}">{markup}</div>')
 
@@ -215,11 +220,27 @@ class Document:
             position = stop
         output.append(body[position:])
         body = "".join(output)
+
+        def literal(match):
+            if match["language"] and not self.options.markdown_mode:
+                return self.block(self.build.highlighter.code(match["code"], match["language"], True))
+            return protected.put(match[0])
+
         body = re.sub(
-            r"<(pre|code)\b[^>]*>.*?</\1>|<!--.*?-->", lambda m: protected.put(m[0]), body, flags=re.S | re.I
+            r"<(pre|code)\b[^>]*>.*?</\1>|<!--.*?-->|"
+            r"{%\s*highlight\s+(?P<language>\S+)\s*%}(?P<code>.*?){%\s*endhighlight\s*%}",
+            literal,
+            body,
+            flags=re.S | re.I,
         )
         body = re.sub(r"(`+)(?!`)(.+?)(?<!`)\1(?!`)", lambda m: protected.put(m[0]), body, flags=re.S)
-        body = re.sub(r"(?:^(?: {4}|\t)[^\n]*(?:\n|$))+", lambda m: protected.put(m[0]), body, flags=re.M)
+        # A display may contain indented TeX lines; only shield indentation outside math.
+        body = re.sub(
+            MATH.pattern + r"|(?P<indented>(?:^(?: {4}|\t)[^\n]*(?:\n|$))+)",
+            lambda m: protected.put(m[0]) if m["indented"] else m[0],
+            body,
+            flags=re.M | re.S,
+        )
         return body
 
     def obsidian(self, match):
@@ -294,12 +315,6 @@ class Document:
         protected = Stash()
         body = self.protect_code(body, protected)
         if not self.options.markdown_mode:
-            body = re.sub(
-                r"{%\s*highlight\s+(\S+)\s*%}(.*?){%\s*endhighlight\s*%}",
-                lambda m: self.block(self.build.highlighter.code(m[2], m[1], True)),
-                body,
-                flags=re.S,
-            )
             body = MATH.sub(
                 lambda m: self.html.put(
                     self.build.math.render(m[1] or m[2] or m[0], bool(m[1] or m[3]), self)

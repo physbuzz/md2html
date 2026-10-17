@@ -1,0 +1,4 @@
+include makefile md2html.spec package.json package-lock.json
+recursive-include examples *.md
+recursive-include tests *.py *.cjs
+include tools/browser_pages.py

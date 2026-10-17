@@ -225,7 +225,10 @@ class Build:
                     year, month, day, title = dated.groups()
                     data.setdefault("date", f"{year}-{month}-{day}")
                     data.setdefault("slug", slugify(title))
-                    url = str(self.site_config.get("permalink", "/:year/:month/:day/:title.html"))
+                    default = (
+                        "date" if self.options.output_mode == "jekyll" else "/:year/:month/:day/:title.html"
+                    )
+                    url = str(self.site_config.get("permalink", default))
                     url = {
                         "pretty": "/:categories/:year/:month/:day/:title/",
                         "date": "/:categories/:year/:month/:day/:title.html",
@@ -394,6 +397,17 @@ class Build:
         if template:
             body = liquid_render(
                 self.liquid, template.read_text(), context | {"content": body}, document.warn
+            )
+        fields = context["md2html"]
+        if fields["uses_mathjax_chtml"] and (
+            any(html.escape(url, quote=True) not in body for url in fields["math_stylesheets"])
+            or fields["math_css"]
+            and fields["math_css"] not in body
+        ):
+            document.warn(
+                "layout omits generated CommonHTML styles; provide equivalent author CSS or include "
+                "md2html.math_stylesheets and "
+                "md2html.math_css (see --example-template -)"
             )
         return body
 

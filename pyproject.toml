@@ -8,7 +8,7 @@ version = "3.0.0"
 description = "Markdown notes, executable snippets, and math for HTML pages and static sites."
 readme = "readme.md"
 requires-python = ">=3.10"
-dependencies = ["mistune>=3.0,<4", "python-liquid>=2.3,<3", "PyYAML>=6", "Pygments>=2.15", "latex2mathml>=3.81", "ziamath>=0.13", "watchdog>=4", "psutil>=5.9", "rcssmin>=1.1"]
+dependencies = ["mistune>=3.0,<4", "python-liquid>=2.3,<3", "PyYAML>=6", "Pygments>=2.19", "pygments-mathematica>=0.4.2,<0.5", "latex2mathml>=3.81", "ziamath>=0.13", "watchdog>=4", "psutil>=5.9", "rcssmin>=1.1"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "beautifulsoup4>=4", "ruff"]

@@ -15,10 +15,15 @@ try {
   console.log(JSON.stringify({ready: true}));
   for await (const line of readline.createInterface({input: process.stdin})) {
     try {
-      const {tex, display} = JSON.parse(line);
+      const {tex, display, stylesheet} = JSON.parse(line);
+      if (stylesheet) {
+        console.log(JSON.stringify({css: adaptor.outerHTML(MathJax.chtmlStylesheet())}));
+        continue;
+      }
       const node = MathJax.tex2chtml(tex, {display});
-      console.log(JSON.stringify({html: adaptor.outerHTML(node).replace(/\sdata-latex="[^"]*"/g, ''),
-                                 css: adaptor.outerHTML(MathJax.chtmlStylesheet())}));
+      // Preserve MathJax's incremental rule order without serializing CSS for every equation.
+      MathJax.chtmlStylesheet();
+      console.log(JSON.stringify({html: adaptor.outerHTML(node).replace(/\sdata-latex="[^"]*"/g, '')}));
     } catch (error) {
       console.log(JSON.stringify({error: String(error)}));
     }

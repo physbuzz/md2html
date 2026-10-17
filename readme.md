@@ -23,7 +23,8 @@ python -m pip install -e ".[dev]" # install the checkout and test dependencies
 make install # build and copy it to ~/.local/bin/md2html
 ```
 Renderer dependencies:
-- **Rouge syntax highlighting**: install Ruby, then `gem install --user-install rouge`.
+- **Pygments syntax highlighting** (default): installed with md2html, including `pygments-mathematica` for Wolfram Language syntax and built-in symbols. Highlighting does not require Mathematica, Ruby, or Rouge.
+- **Rouge syntax highlighting** (optional, `--highlighter rouge`): install Ruby, then `gem install --user-install rouge`.
 - **MathJax**: `make install` bundles its npm packages, so the installed command works from any directory. The default static CommonHTML backend requires Node.js at build time. The browser MathJax backend renders TeX when the page is opened. For a Python-package installation, run `npm install mathjax@4.1.3 @mathjax/mathjax-tex-font@4.1.3 @mathjax/mathjax-newcm-font@4.1.3` in the notes project or a parent directory.
 
 SVG, MathML, raw LaTeX, and CDN browser MathJax do not need the npm MathJax
@@ -75,6 +76,8 @@ All options:
 - `--timeout SECONDS`: time limit for each executed example. The default is 120. JSON: `"timeout"`.
 - `--clean`: remove the output directory before building in `site` or `jekyll` mode. It does not apply to independent page builds. JSON: `"clean": true`.
 - `--version`, `--help`.
+
+The default Pygments palettes give Wolfram Language blocks black built-ins in light mode, light built-ins in dark mode, blue user symbols, and green patterns and local variables. The light palette derives from `pygments-mathematica`; both Wolfram palettes are defined in `src/md2html/highlight_styles.py`. Other languages keep their usual palette. The style options select a palette for all code blocks; they do not select a programming language.
 
 Command-line settings override JSON settings. A running watch or serve command
 keeps its configuration fixed; restart it after changing configuration. Each
@@ -200,10 +203,13 @@ an existing `_config.yml` and layouts but skips plugins, themes, `_data`, and
 Sass; `--jekyll-markdown` expands md2html directives and leaves the remaining
 Markdown and Liquid for Jekyll. Markdown pages without a `layout` use the
 selected page template in every HTML output mode. Static math backends also
-render in `jekyll` mode; custom layouts must include the relevant `md2html`
-asset fields, as shown by `--example-template -`.
+render in `jekyll` mode; custom layouts supply the required styles and scripts
+through the relevant `md2html` asset fields, as shown by `--example-template -`,
+or equivalent author assets. CommonHTML builds warn when a custom layout does
+not reference its generated math styles; author CSS may provide those rules.
 
-Like Jekyll, dated posts live in `_posts/YYYY-MM-DD-title.md`. Documents
+Like Jekyll, dated posts live in `_posts/YYYY-MM-DD-title.md`. `--jekyll` defaults
+to category-prefixed dated post URLs unless `permalink` specifies another pattern. Documents
 elsewhere still build normally and are available through `site.pages`.
 `site.posts`, `site.tags`, and `site.categories` index `_posts`; in native site
 mode `site.pages` contains every discovered page, while `--jekyll` excludes

@@ -17,13 +17,16 @@
 .math-copy-source {
   position: absolute;
   display: inline-block;
-  width: 0;
-  height: 0;
+  width: 1px;
+  height: 1px;
   overflow: hidden;
+  clip-path: inset(50%);
   color: transparent;
-  font-size: 0;
+  /* Chromium requires a nonzero text box for copied selections. */
+  font-size: 1px;
   line-height: 0;
   white-space: pre;
+  user-select: text;
 }
 
 .math-mathjax-chtml,

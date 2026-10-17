@@ -1,7 +1,15 @@
+import shutil
 import subprocess
 import sys
 
 import pytest
+
+
+@pytest.fixture
+def rouge():
+    ruby = shutil.which("ruby")
+    if not ruby or subprocess.run([ruby, "-rrouge", "-e", ""], capture_output=True).returncode:
+        pytest.skip("requires optional Ruby and Rouge installation")
 
 
 @pytest.fixture

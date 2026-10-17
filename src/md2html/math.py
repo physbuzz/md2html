@@ -13,13 +13,24 @@ CDN = "https://cdn.jsdelivr.net/npm/"
 VERSION = "4.1.3"
 
 
-def npm_root(root):
-    roots = (root, *root.parents, PACKAGE.parent.parent, Path(getattr(sys, "_MEIPASS", PACKAGE)))
+def npm_root(root, config_root=None):
+    config_paths = (config_root, *config_root.parents) if config_root else ()
+    roots = (
+        root,
+        *root.parents,
+        *config_paths,
+        PACKAGE.parent.parent,
+        Path(getattr(sys, "_MEIPASS", PACKAGE)),
+    )
     for base in roots:
         candidate = base / "node_modules"
         if (candidate / "mathjax/package.json").is_file():
             return candidate
-    raise OSError("MathJax packages not found; run npm install in the notes directory or a parent")
+    raise OSError(
+        "MathJax packages not found; in the notes directory or a parent, run "
+        f"npm install mathjax@{VERSION} @mathjax/mathjax-tex-font@{VERSION} "
+        f"@mathjax/mathjax-newcm-font@{VERSION}"
+    )
 
 
 def multiline(tex):
@@ -73,7 +84,9 @@ class Math:
         self.options = options
         self.worker = None
         self.cache = {}
-        self.css = ""
+
+    def stylesheet(self):
+        return re.sub(r"^<style[^>]*>|</style>$", "", self.worker.request(stylesheet=True)["css"])
 
     def close(self):
         if self.worker:
@@ -93,16 +106,22 @@ class Math:
                     if backend == "mathjax-chtml":
                         if self.worker is None:
                             self.worker = Worker(
-                                ["node", str(PACKAGE / "scripts/chtml.mjs"), str(npm_root(self.options.root))]
+                                [
+                                    "node",
+                                    str(PACKAGE / "scripts/chtml.mjs"),
+                                    str(npm_root(document.build.source_root, self.options.root)),
+                                ]
                             )
                         result = self.worker.request(tex=tex, display=display)
-                        self.css = re.sub(r"^<style[^>]*>|</style>$", "", result["css"])
                         self.cache[key] = result["html"]
                     else:
                         self.cache[key] = static_math(tex, display, backend)
                 rendered = self.cache[key]
                 if "data-mjx-error" in rendered:
-                    document.warn(f"could not render TeX: {tex}")
+                    message = re.search(r'data-mjx-error="([^"]+)"', rendered)
+                    detail = html.unescape(message[1]) if message else "invalid expression"
+                    preview = " ".join(tex.split())[:160]
+                    document.warn(f"could not render TeX ({detail}): {preview}")
                 document.fonts.add("zero")
                 document.fonts.update(name.lower() for name in re.findall(r"\bTEX-([A-Z0-9]+)\b", rendered))
                 if "mjx-break" in rendered:
@@ -126,4 +145,6 @@ class Math:
                 markup = html.escape(raw)
         tag = "div" if display else "span"
         mode = "display" if display else "inline"
-        return f'<{tag} class="math {mode}-math math-{backend}">{markup}</{tag}>'
+        # Browser MathJax must leave static equations and their copyable TeX alone.
+        ignore = " tex2jax_ignore mathjax_ignore" if backend not in {"raw", "mathjax"} else ""
+        return f'<{tag} class="math {mode}-math math-{backend}{ignore}">{markup}</{tag}>'

@@ -1,4 +1,5 @@
 import json
+import shutil
 import time
 from pathlib import Path
 from urllib.parse import unquote
@@ -113,6 +114,32 @@ def test_custom_commands_workspaces_and_artifacts(cli, put, tmp_path):
     assert "should-not-run" not in soup(tmp_path / "page.html").select(".code-output")[1].text
 
 
+@pytest.mark.parametrize("mode", ["pages", "jekyll-markdown"])
+def test_execution_warning_stays_with_collapsed_snippet(cli, put, tmp_path, mode):
+    put("missing.wl", "1 + 1\n")
+    put(
+        "page.md",
+        "@src(missing.wl, collapsed)\n\n"
+        "@src-begin(python)\nprint('successful output')\n@src-end\n\n# After snippets\n",
+    )
+    put("md2html.json", json.dumps({
+        "commands": {"wl": "md2html-test-missing-wolframscript"},
+        "execute": True,
+    }))
+    result = cli("page.md", "--output-mode", mode, "-o", "rendered")
+    assert "md2html-test-missing-wolframscript" in result.stderr
+    output = tmp_path / "rendered" / ("page.md" if mode == "jekyll-markdown" else "page.html")
+    doc = soup(output)
+    boxes = doc.select(".code-box")
+    warning = doc.select_one("aside.warning")
+    assert len(doc.select("aside.warning")) == 1
+    assert warning.parent == boxes[0]
+    assert warning.find_parent("details") is None
+    assert "md2html-test-missing-wolframscript" in warning.text
+    assert not boxes[1].select(".warning")
+    assert "successful output" in boxes[1].select_one(".code-output").text
+
+
 @pytest.mark.parametrize(
     "language,code,expected",
     [
@@ -139,6 +166,7 @@ def test_timeout_stops_descendants_and_retries(cli, put, tmp_path):
     put("a.md", "@src(late.py)\n# Survives\n")
     result = cli("-e", "--timeout", ".15", "a.md")
     assert "timed out" in result.stderr
+    assert "timed out" in soup(tmp_path / "a.html").select_one(".code-box > .warning").text
     time.sleep(1.2)
     assert not (tmp_path / "leaked").exists()
     assert not list(tmp_path.rglob(".complete"))
@@ -197,6 +225,51 @@ def test_multiple_inputs_keep_shared_math(cli, put, tmp_path, backend):
         url = tag.get("href", tag.get("src"))
         assert (tmp_path / "public" / unquote(url)).is_file(), url
     assert list((tmp_path / "public/assets").rglob("*.woff2"))
+
+
+@pytest.mark.parametrize("backend", ["mathjax-chtml", "mathjax"])
+def test_rebuild_restores_shared_math_assets(put, tmp_path, backend):
+    from md2html.config import Options
+    from md2html.project import Build
+
+    put("notes/a.md", "$x^2$")
+    put("notes/nested/b.md", "$x^2$ and $\\frac{1}{2}$")
+    output = tmp_path / "public"
+    build = Build(Options(
+        input=[tmp_path / "notes"], output=output, root=tmp_path,
+        recursive=True, assets="shared", math=backend,
+    ))
+    try:
+        build.build()
+        shutil.rmtree(output)
+        build.build()
+        put("notes/nested/b.md", "$x^2$ and $\\sqrt{z}$")
+        build.build()
+    finally:
+        build.close()
+    for target in [output / "a.html", output / "nested/b.html"]:
+        doc = soup(target)
+        for tag in doc.select("link[href],script[src]"):
+            url = tag.get("href", tag.get("src"))
+            assert (target.parent / unquote(url)).is_file(), url
+    doc = soup(output / "nested/b.html")
+    if backend == "mathjax-chtml":
+        assert doc.select("mjx-msqrt")
+        css = "".join(
+            (output / "nested" / unquote(link["href"])).read_text()
+            for link in doc.select('link[rel="stylesheet"]')
+        )
+        assert "mjx-msqrt" in css
+    else:
+        assert list((output / "assets/md2html/mathjax-newcm-font").rglob("*.woff2"))
+
+
+def test_highlighting_blocks_have_independent_lexer_state(cli, put, tmp_path):
+    put("a.md", "```python\n'''unfinished string\n```\n\n```python\ndef f():\n    return 1\n```\n")
+    cli("a.md", "--math", "raw")
+    blocks = soup(tmp_path / "a.html").select("pre code")
+    assert "unfinished string" in blocks[0].text
+    assert [span.text for span in blocks[1].select(".k")] == ["def", "return"]
 
 
 def test_site_layouts_listing_pagination_and_feed(cli, put, tmp_path):
@@ -292,7 +365,9 @@ def test_liquid_only_and_no_liquid(cli, put, tmp_path):
 
 
 @pytest.mark.parametrize("backend,style", [("pygments", "monokai"), ("rouge", "github.light")])
-def test_highlighters(cli, put, tmp_path, backend, style):
+def test_highlighters(cli, put, tmp_path, request, backend, style):
+    if backend == "rouge":
+        request.getfixturevalue("rouge")
     put("a.md", "```python\nprint(42)\n```")
     cli("a.md", "--highlighter", backend, "--highlighter-style", style)
     doc = soup(tmp_path / "a.html")
@@ -466,3 +541,177 @@ def test_shared_authored_stylesheets_copy_imports_and_resources(cli, put, tmp_pa
 
     for url in re.findall(r'url\("([^"]+)"\)', sheet.read_text()):
         assert (sheet.parent / url).is_file()
+
+
+def test_indented_display_math_preserves_following_content(cli, put, tmp_path):
+    put(
+        "a.md",
+        r"""$$\left(\matrix{1 & 2 \cr
+        3 & 4 \cr }\right)$$
+
+After the matrix.
+
+$$\begin{array}{cc}
+    1 & 2 \\
+    3 & 4
+\end{array}$$
+
+    $not math$ {{ literal }}
+
+The final $x^2$ remains inline.
+""",
+    )
+    result = cli("a.md")
+    doc = soup(tmp_path / "a.html")
+    assert not result.stderr
+    assert len(doc.select(".display-math")) == 2
+    assert len(doc.select(".inline-math")) == 1
+    assert "After the matrix." in doc.text
+    assert "$not math$ {{ literal }}" in doc.select_one("pre").text
+    assert "MD2HTML" not in doc.text
+
+
+def test_custom_layout_warns_when_math_styles_are_omitted(cli, put, tmp_path):
+    put("_layouts/post.html", "<html><body>{{ content }}</body></html>")
+    put("a.md", "---\nlayout: post\n---\n$x^2$\n")
+    result = cli("a.md")
+    assert "layout omits generated CommonHTML styles" in result.stderr
+    put(
+        "_layouts/post.html",
+        "<html><head><style>{{ md2html.math_css }}</style></head><body>{{ content }}</body></html>",
+    )
+    assert "layout omits" not in cli("a.md").stderr
+
+
+def test_jekyll_highlight_preserves_indentation_and_literal_syntax(cli, put, tmp_path):
+    put(
+        "a.md",
+        """{% highlight python %}
+def example():
+    return "{{literal}} $not_math$ `code`"
+{% endhighlight %}
+
+After code.
+""",
+    )
+    assert not cli("a.md").stderr
+    doc = soup(tmp_path / "a.html")
+    assert '    return "{{literal}} $not_math$ `code`"' in doc.select_one("pre").text
+    assert "MD2HTML" not in doc.text
+    assert "After code." in doc.text
+
+
+def test_highlight_tags_inside_literal_code_stay_literal(cli, put, tmp_path):
+    put(
+        "a.md",
+        """```liquid
+{% highlight python %}{{ literal }}{% endhighlight %}
+```
+
+<pre>{% highlight python %}{{ literal }}{% endhighlight %}</pre>
+
+{% highlight html %}
+<pre>{{ another }}</pre>
+{% endhighlight %}
+""",
+    )
+    assert not cli("a.md").stderr
+    doc = soup(tmp_path / "a.html")
+    assert len(doc.select("pre")) == 3
+    assert doc.text.count("{% highlight python %}") == 2
+    assert "<pre>{{ another }}</pre>" in doc.select("pre")[2].text
+    assert "MD2HTML" not in doc.text
+
+
+def test_jekyll_default_category_urls_match_index_and_feed(cli, put, tmp_path):
+    put(
+        "_posts/2026-07-05-example.md",
+        "---\ntitle: Example\ncategories: physics math\ntags: [algebra]\n---\nContent",
+    )
+    put(
+        "index.html",
+        '---\n---\n{% for post in site.categories.physics %}<a href="{{ post.url }}">{{ post.title }}</a>{% endfor %}',
+    )
+    cli("--jekyll", ".", "-o", "public", "--math", "raw")
+    url = "/physics/math/2026/07/05/example.html"
+    assert (tmp_path / "public" / url.lstrip("/")).exists()
+    assert soup(tmp_path / "public/index.html").a["href"] == url
+    assert url in (tmp_path / "public/feed.xml").read_text()
+
+
+def test_wolfram_operators_and_multiline_text(cli, put, tmp_path):
+    code = """(* comment with a dot .
+and a second line *)
+a.b + .5 + 1.5;
+f[x_:1] := "first line
+second line";
+"""
+    code += 'label = "continued ' + "\\\n" + 'string";\n'
+    put("a.md", "```mathematica\n" + code + "```\n")
+    cli("a.md")
+    doc = soup(tmp_path / "a.html")
+    assert not doc.select(".err")
+    assert doc.select_one("pre code").text == code
+    assert any(token.text == "." for token in doc.select(".o"))
+    assert any(".5" in token.text for token in doc.select(".m,.mf"))
+
+
+@pytest.mark.parametrize("mode", ["pages", "jekyll"])
+def test_wolfram_builtins_without_external_tools(cli, put, tmp_path, monkeypatch, mode):
+    builtins = ["Integrate", "RandomReal", "MultinormalDistribution", "Eigensystem", "CholeskyDecomposition"]
+    code = " ".join([*builtins, "MyFunction", "sigma"]) + "\n"
+    aliases = ["mathematica", "mma", "nb", "wl", "wolfram", "wolfram-language", "m", "Mathematica"]
+    page = "\n".join(f"```{language}\n{code}```\n" for language in aliases)
+    for filename in ("example.m", "example.wl"):
+        put(filename, code)
+        page += f"\n@src({filename})\n"
+    put("a.md", "---\n---\n" + page + "\n$x^2$\n")
+    monkeypatch.setenv("PATH", "")
+    result = cli("a.md", "--output-mode", mode, "--math", "mathml", "-o", "public")
+    doc = soup(tmp_path / "public/a.html")
+    assert not result.stderr
+    assert not doc.select(".err")
+    blocks = doc.select("pre code")
+    assert len(blocks) == len(aliases) + 2
+    for block in blocks:
+        assert block.parent.parent["data-language"] == "wl"
+        assert block.text == code
+        assert [span.text for span in block.select(".nb")] == builtins
+        assert [span.text for span in block.select(".nv")] == ["MyFunction", "sigma"]
+    assert doc.select("math")
+
+
+def test_mixed_language_highlighting_and_custom_palettes(cli, put, tmp_path):
+    put("a.md", "```wl\nf[x_] := AbsoluteTiming[x^2]\n```\n\n```cpp\nint main() { return 0; }\n```")
+    cli("a.md", "--math", "raw", "--no-minify-css")
+    doc = soup(tmp_path / "a.html")
+    assert doc.select_one('[data-language="wl"] .nb').text == "AbsoluteTiming"
+    assert doc.select_one('[data-language="cpp"] .kt').text == "int"
+    assert '.codehilite[data-language="wl"] .nb { color: #000' in doc.style.text
+    assert '.codehilite[data-language="wl"] .nb { color: #E6EDF3' in doc.style.text
+    assert '.codehilite[data-language="wl"] .p { color: #555' in doc.style.text
+    assert '.codehilite[data-language="wl"] .nv { color: #79C0FF' in doc.style.text
+    assert '.codehilite:not([data-language="wl"]) .kt { color: #B00040' in doc.style.text
+    cli("a.md", "--math", "raw", "--highlighter-style", "monokai", "--highlighter-dark-style", "monokai")
+    css = soup(tmp_path / "a.html").style.text
+    assert '.codehilite .nb{color:#a6e22e' in css.lower()
+
+
+@pytest.mark.parametrize("missing", ["ruby", "gem"])
+def test_unavailable_rouge_explains_optional_dependency(cli, put, tmp_path, monkeypatch, missing):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    if missing == "gem":
+        ruby = shutil.which("ruby")
+        if not ruby:
+            pytest.skip("requires Ruby to test missing gem")
+        (bin_dir / "ruby").symlink_to(ruby)
+        monkeypatch.setenv("GEM_HOME", str(tmp_path / "empty-gems"))
+        monkeypatch.setenv("GEM_PATH", str(tmp_path / "empty-gems"))
+    monkeypatch.setenv("PATH", str(bin_dir))
+    put("a.md", "```python\nprint(42)\n```\n")
+    result = cli("a.md", "--math", "raw", "--highlighter", "rouge", ok=False)
+    assert "requires Ruby and the rouge gem" in result.stderr
+    assert "gem install --user-install rouge" in result.stderr
+    assert "--highlighter pygments" in result.stderr
+    assert "Traceback" not in result.stderr

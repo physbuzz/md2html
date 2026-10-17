@@ -119,7 +119,7 @@ def context(build, page, document, template):
             else:
                 result["stylesheets"].append(name)
     if "math" in document.features and options.math == "mathjax-chtml":
-        root = npm_root(options.root) / "@mathjax/mathjax-tex-font/chtml/woff2"
+        root = npm_root(build.source_root, options.root) / "@mathjax/mathjax-tex-font/chtml/woff2"
         fonts = document.fonts
         if options.math_fonts == "all":
             fonts = {p.stem.removeprefix("mjx-tex-") for p in root.glob("*.woff2")}
@@ -129,7 +129,7 @@ def context(build, page, document, template):
             family = re.search(r'font-family:\s*["\']?([^;"\'\s]+)', match[0])
             return match[0] if family and family[1] in families and options.math_fonts != "none" else ""
 
-        css = re.sub(r"@font-face[^{}]*\{[^}]*\}", font_face, build.math.css)
+        css = re.sub(r"@font-face[^{}]*\{[^}]*\}", font_face, build.math.stylesheet())
         delivery = options.math_fonts
         if delivery in {"auto", "all"}:
             delivery = {"standalone": "inline", "shared": "local", "cdn": "remote"}[options.assets]
@@ -153,16 +153,17 @@ def context(build, page, document, template):
         config = {"tex": {"inlineMath": [["$", "$"]], "displayMath": [["$$", "$$"]], "processEscapes": True}}
         result["mathjax_src"] = f"{CDN}mathjax@{VERSION}/tex-mml-chtml.js"
         if options.assets == "shared":
-            npm = npm_root(options.root)
+            npm = npm_root(build.source_root, options.root)
             target = build.output_root / "assets/md2html/mathjax.js"
-            build.copy(npm / "mathjax/tex-mml-chtml.js", target)
-            for origin, destination in (
-                (npm / "@mathjax/mathjax-newcm-font/chtml", target.parent / "mathjax-newcm-font/chtml"),
-                (npm / "mathjax/sre", target.parent / "sre"),
-            ):
-                for source in origin.rglob("*"):
-                    if source.is_file():
-                        build.copy(source, destination / source.relative_to(origin))
+            if target.resolve() not in build.copied:
+                build.copy(npm / "mathjax/tex-mml-chtml.js", target)
+                for origin, destination in (
+                    (npm / "@mathjax/mathjax-newcm-font/chtml", target.parent / "mathjax-newcm-font/chtml"),
+                    (npm / "mathjax/sre", target.parent / "sre"),
+                ):
+                    for source in origin.rglob("*"):
+                        if source.is_file():
+                            build.copy(source, destination / source.relative_to(origin))
             config.update(
                 loader={"paths": {"fonts": build.url(target.parent, page)}},
                 output={"fontPath": "[fonts]/%%FONT%%-font"},

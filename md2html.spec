@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, copy_metadata
 
 root = Path(SPECPATH)
 data = [
@@ -13,6 +13,7 @@ data += [
     for name in ('mathjax', '@mathjax')
 ]
 data += [(str(root / 'readme.md'), 'md2html')]
+data += copy_metadata('pygments-mathematica')
 analysis = Analysis(
     [str(root / 'src/md2html/__main__.py')],
     pathex=[str(root / 'src')],
