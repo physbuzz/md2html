@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .node-version
+      - name: Install build tools
+        run: |
+          pipx install uv==0.13.1
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y racket
+      - name: Install locked Python dependencies
+        run: make sync
+      - name: Validate version tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          .venv/bin/python - <<'PY'
+          import os
+          from md2html import __version__
+          from md2html.update import version_tuple
+          version_tuple(__version__)
+          if os.environ['EVENT_NAME'] == 'push':
+              assert os.environ['TAG_NAME'] == 'v' + __version__, 'Tag must match md2html.__version__'
+          PY
+      - name: Build executable without root privileges
+        run: make pyinstaller
+      - name: Test source and packaged executable
+        run: |
+          .venv/bin/ruff check src tests
+          MD2HTML_TEST_COMMAND="$PWD/dist/md2html" make test
+      - name: Prepare checksummed release assets
+        run: |
+          version="$(.venv/bin/python -c 'from md2html import __version__; print(__version__)')"
+          test "$(dist/md2html --version)" = "md2html $version"
+          mkdir release
+          cp dist/md2html "release/md2html-$version-linux-x86_64"
+          cd release
+          sha256sum md2html-* > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-linux-x86_64
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    if: github.event_name == 'push' && github.repository == 'physbuzz/md2html'
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-linux-x86_64
+          path: release
+      - name: Verify transferred assets
+        working-directory: release
+        run: sha256sum --check SHA256SUMS
+      - name: Publish only after all assets have uploaded
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG_NAME" release/* --repo "$GITHUB_REPOSITORY" \
+            --verify-tag --title "$TAG_NAME" --generate-notes --draft
+          gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest

@@ -72,21 +72,18 @@ def terminate(process, existing):
         raise RuntimeError("execution output remained open after descendant cleanup") from error
 
 
-def workspace(page, source, code, language):
-    language = ALIASES.get(language.lower(), language.lower())
-    label = slug(source.stem) if source else "inline"
-    digest = hashlib.sha256(code.encode()).hexdigest()[:12]
-    return page.parent / ".md2html-cache" / slug(page.stem) / f"{language}-{label}-{digest}"
-
-
-def run(options, page, source, code, language, flags, warn):
+def run(build, page, source, code, language, flags, warn):
     if "noexecute" in flags:
         return None
+    options = build.options
     language = ALIASES.get(language.lower(), language.lower())
     inline = source is None
-    builddir = workspace(page, source, code, language)
+    label = slug(source.stem) if source else "inline"
+    digest = hashlib.sha256(code.encode()).hexdigest()[:12]
+    builddir = page.parent / ".md2html-cache" / slug(page.stem) / f"{language}-{label}-{digest}"
     output = builddir / "output.txt"
     complete = builddir / ".complete"
+    build.dependencies.update([output, complete])
     if complete.exists() and output.exists() and not options.force_execution:
         return output.read_text()
     if not options.execute:

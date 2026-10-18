@@ -112,6 +112,8 @@ def resolve(cli):
     options = Options(**{key: value for key, value in data.items() if key in known})
     options.root = root
     options.input = [Path(p) for p in options.input] or [root]
+    if "output_mode" not in data:
+        options.output_mode = "site" if any(path.is_dir() for path in options.input) else "pages"
     options.templates = [Path(p) for p in options.templates]
     if not config and len(options.input) == 1:
         options.root = options.input[0] if options.input[0].is_dir() else options.input[0].parent
@@ -136,21 +138,9 @@ def resolve(cli):
             raise ValueError(f"{name} must be one of: {', '.join(choices)}")
     if options.force_execution and not options.execute:
         raise ValueError("--force-execution requires --execute")
-    for name in (
-        "recursive",
-        "verbose",
-        "execute",
-        "force",
-        "force_execution",
-        "clean",
-        "watch",
-        "serve",
-        "feature_css",
-        "minify_css",
-        "parse_liquid",
-    ):
-        if not isinstance(getattr(options, name), bool):
-            raise ValueError(f"{name} must be true or false")
+    for item in fields(Options):
+        if item.type is bool and not isinstance(getattr(options, item.name), bool):
+            raise ValueError(f"{item.name} must be true or false")
     if not isinstance(options.timeout, (int, float)):
         raise ValueError("timeout must be a number")
     if not isinstance(options.port, int) or not 0 <= options.port <= 65535:

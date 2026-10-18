@@ -1,8 +1,11 @@
 """User-visible build choices and dependency behavior."""
 
 import json
+import re
 from pathlib import Path
+from urllib.parse import unquote
 
+import pytest
 from bs4 import BeautifulSoup
 
 
@@ -35,6 +38,46 @@ def test_site_standalone_means_shared_local_assets(cli, put, tmp_path):
     assert (tmp_path / "html/assets").exists()
 
 
+@pytest.mark.parametrize("arguments", [("page.md",), ("page.md", "other.md"), ("-r", "page.md")])
+def test_listed_files_default_to_standalone(cli, put, tmp_path, arguments):
+    put("page.md", "![image](picture.svg)")
+    put("other.md", "Other page")
+    put("picture.svg", "<svg/>")
+    cli(*arguments, "--math", "raw")
+    target = tmp_path / ("html/page.html" if "other.md" in arguments else "page.html")
+    assert 'src="data:image/svg+xml;base64,' in target.read_text()
+
+
+@pytest.mark.parametrize("flags", [(), ("-r",)])
+def test_directory_defaults_to_site_and_excludes_nested_output(cli, put, tmp_path, flags):
+    put("index.md", "![image](picture.svg)")
+    put("picture.svg", "<svg/>")
+    put("nested/page.md", "Nested page")
+    put("html/keep.txt", "User output file")
+    args = (*flags, ".", "-o", "html", "--math", "raw")
+    cli(*args)
+    assert 'src="picture.svg"' in (tmp_path / "html/index.html").read_text()
+    assert (tmp_path / "html/assets/base.css").exists()
+    assert (tmp_path / "html/nested/page.html").exists()
+    assert (tmp_path / "html/feed.xml").exists()
+    assert "Built 0 files" in cli(*args).stdout
+    assert not (tmp_path / "html/html").exists()
+    assert (tmp_path / "html/keep.txt").read_text() == "User output file"
+
+
+def test_explicit_mode_overrides_directory_default(cli, put, tmp_path):
+    put("notes/page.md", "![image](picture.svg)")
+    put("notes/picture.svg", "<svg/>")
+    put("md2html.json", json.dumps({"input": "notes", "output_mode": "pages"}))
+    cli("-o", "pages", "--math", "raw")
+    assert 'src="data:image/svg+xml;base64,' in (tmp_path / "pages/page.html").read_text()
+    cli("--output-mode", "site", "-o", "site", "--math", "raw")
+    assert 'src="picture.svg"' in (tmp_path / "site/page.html").read_text()
+    put("md2html.json", json.dumps({"input": "notes", "output_mode": "site"}))
+    cli("--output-mode", "pages", "-o", "pages", "--math", "raw")
+    assert 'src="data:image/svg+xml;base64,' in (tmp_path / "pages/page.html").read_text()
+
+
 def test_missing_explicit_execution_cache_is_verbose_only(cli, put, tmp_path):
     put("a.md", '@src-begin(python, execute)\nprint("HELLO")\n@src-end\n')
     assert "cached output unavailable" not in cli("a.md", "--math", "raw").stderr
@@ -60,22 +103,58 @@ def test_site_selection_and_jekyll_explicit_include(cli, put, tmp_path):
         "Gemfile",
         "Gemfile.lock",
         "node_modules/package/file.js",
+        "gemfiles/ruby.gemfile",
+        "vendor/bundle/file.txt",
+        "vendor/cache/file.txt",
+        "vendor/gems/file.txt",
+        "vendor/ruby/file.txt",
         "vendor/file.txt",
+        "venv/file.txt",
+        ".venv/file.txt",
+        "nested/.secret",
+        ".hidden/file.txt",
+        "nested/md2html.json",
+        "_download.txt",
+        "backup.txt~",
+        "#draft.txt",
+        "~draft.txt",
+        ".htaccess",
+        "skip/file.txt",
     ):
         put("site/" + name, "content")
     put("site/md2html.json", "{}")
-    put("site/_config.yml", "include: [_public]\n")
+    put("site/_config.yml", "include: [_public, node_modules/keep, skip]\n")
     put("site/_public/share.txt", "EXPLICIT")
-    for mode in ("site", "jekyll"):
-        cli("site", "-o", "out-" + mode, "--output-mode", mode, "--math", "raw")
+    put("site/node_modules/keep/file.js", "EXPLICIT")
+    put("md2html.json", json.dumps({"exclude": ["skip"]}))
+    for mode in ("pages", "site", "jekyll"):
+        cli("-r", "site", "-o", "out-" + mode, "--output-mode", mode, "--math", "raw")
         output = tmp_path / ("out-" + mode)
         assert (output / "img/share.gif").exists()
-        assert not (output / "Gemfile").exists()
-        assert not (output / "md2html.json").exists()
-        assert not (output / "_private").exists()
-        assert not (output / "node_modules").exists()
-        assert not (output / "vendor").exists()
+        for name in ("md2html.json", "_private", ".venv", "nested/.secret", ".hidden", "skip"):
+            assert not (output / name).exists()
+        for name in ("vendor/file.txt", "venv/file.txt", "nested/md2html.json", "node_modules/keep/file.js"):
+            assert (output / name).exists()
+        for name in (
+            "Gemfile",
+            "Gemfile.lock",
+            "gemfiles",
+            "node_modules/package",
+            "vendor/bundle",
+            "vendor/cache",
+            "vendor/gems",
+            "vendor/ruby",
+            "_download.txt",
+            "backup.txt~",
+            "#draft.txt",
+            "~draft.txt",
+        ):
+            assert (output / name).exists() == (mode != "jekyll")
         assert (output / "_public/share.txt").exists() == (mode == "jekyll")
+    # With no explicit include list, Jekyll includes .htaccess by default.
+    put("site/_config.yml", "{}")
+    cli("site", "--jekyll", "-o", "default-jekyll", "--math", "raw")
+    assert (tmp_path / "default-jekyll/.htaccess").exists()
 
 
 def test_nested_pagination_hidden_posts_and_feed_metadata(cli, put, tmp_path):
@@ -179,6 +258,42 @@ def test_layout_errors_warn_and_leave_content(cli, put, tmp_path):
     assert "Keep B" in (tmp_path / "html/b.html").read_text()
 
 
+@pytest.mark.parametrize("assets", ["standalone", "shared"])
+def test_css_resources_resolve_from_stylesheets(cli, put, tmp_path, assets):
+    put("notes/a.md", "Hello")
+    put("notes/deep/b.md", "Nested")
+    put("notes/styles/main.css", '@import "nested/extra.css" screen; body { background: url("root.svg"); }')
+    put("notes/styles/nested/extra.css", 'p { background: url("glyph.svg"); }')
+    put("notes/styles/nested/glyph.svg", "<svg>GLYPH</svg>")
+    put("notes/styles/root.svg", "<svg>ROOT</svg>")
+    cli(
+        "notes",
+        "-r",
+        "--output-mode",
+        "pages",
+        "--assets",
+        assets,
+        "--math",
+        "raw",
+        "--css",
+        "notes/styles/main.css",
+        "-o",
+        "html",
+    )
+    for name in ("a.html", "deep/b.html"):
+        page = tmp_path / "html" / name
+        document = BeautifulSoup(page.read_text(), "html.parser")
+        if assets == "standalone":
+            assert document.style.text.count("data:image/svg+xml;base64,") == 2
+        else:
+            sheet = (page.parent / document.select_one('link[rel="stylesheet"]')["href"]).resolve()
+            urls = re.findall(r'url\("([^\"]+)"\)', sheet.read_text())
+            assert {(sheet.parent / unquote(url)).read_text() for url in urls} == {
+                "<svg>GLYPH</svg>",
+                "<svg>ROOT</svg>",
+            }
+
+
 def test_raw_math_in_jekyll_is_configurable(cli, put, tmp_path):
     put("site/a.md", "---\ntitle: Raw\n---\n$x^2$\n\n\\begin{align}x&=1\\end{align}")
     cli("site", "-o", "html", "--jekyll", "--math", "raw")
@@ -216,6 +331,14 @@ def test_incremental_restart_dependencies_and_collections(cli, put, tmp_path):
     put("site/_includes/list.html", "Updated {% for p in site.posts %}{{p.title}};{% endfor %}")
     cli(*args)
     assert paths[0].read_text().startswith("Updated")
+    assert before[2] == paths[2].stat().st_mtime_ns
+    put("site/_templates/list.html", "{% include 'inner.html' %}")
+    put("site/_templates/inner.html", "Priority {% for p in site.posts %}{{p.title}};{% endfor %}")
+    cli(*args)
+    assert paths[0].read_text().startswith("Priority TWO;")
+    put("site/_posts/2026-01-03-three.md", "---\ntitle: THREE\n---\nPost")
+    cli(*args)
+    assert "Priority THREE;TWO;" in paths[0].read_text()
     assert before[2] == paths[2].stat().st_mtime_ns
 
 
@@ -269,7 +392,7 @@ def test_directory_pages_embed_and_shared_math_survives_incremental_changes(cli,
     put("notes/image.svg", "<svg/>")
     put("notes/a.md", "![a](image.svg)\n\n$x$")
     put("notes/b.md", r"$\sqrt{y}$")
-    cli("notes", "-o", "embedded")
+    cli("notes", "-o", "embedded", "--output-mode", "pages")
     assert "data:image/svg+xml;base64," in (tmp_path / "embedded/a.html").read_text()
     args = ("notes", "-o", "shared", "--assets", "shared")
     cli(*args)

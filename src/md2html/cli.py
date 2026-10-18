@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 from functools import partial
+from http.client import HTTPException
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -13,15 +14,15 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from yaml import YAMLError
 
+from . import __version__
 from .config import ASSETS, BACKENDS, FONTS, MODES, PACKAGE, resolve
 from .project import Build
+from .update import update
 
 EXAMPLE = {
     "input": ".",
     "output": "html",
-    "output_mode": "pages",
-    "recursive": True,
-    "assets": "shared",
+    "output_mode": "site",
     "math": {"backend": "mathjax-chtml"},
     "execute": False,
     "exclude": ["node_modules"],
@@ -48,11 +49,20 @@ def parser():
         ("w", "watch", "watch for changes without starting a server"),
     ):
         result.add_argument("-" + short, "--" + name, action="store_true", default=None, help=help_text)
+    result.add_argument(
+        "--no-execute",
+        dest="execute",
+        action="store_false",
+        default=None,
+        help="disable snippet execution even when configured; reuse saved output",
+    )
     result.add_argument("--host", help="preview bind address (default: 127.0.0.1)")
     result.add_argument("-p", "--port", type=int, help="preview port (default: 8000)")
     result.add_argument("--timeout", type=float)
     result.add_argument("--clean", action="store_true", default=None)
-    result.add_argument("--output-mode", choices=MODES)
+    result.add_argument(
+        "--output-mode", choices=MODES, help="default: site for directory inputs, pages for listed files"
+    )
     result.add_argument("--jekyll", dest="output_mode", action="store_const", const="jekyll")
     result.add_argument(
         "--jekyll-markdown", dest="output_mode", action="store_const", const="jekyll-markdown"
@@ -77,7 +87,8 @@ def parser():
     for name in ("config", "template", "css"):
         result.add_argument("--example-" + name, metavar="PATH", help="write example, or - for stdout")
     result.add_argument("--readme", action="store_true")
-    result.add_argument("--version", action="version", version="md2html 3.0.0")
+    result.add_argument("-U", "--update", action="store_true", help="update the release executable and exit")
+    result.add_argument("--version", action="version", version="md2html " + __version__)
     return result
 
 
@@ -153,8 +164,14 @@ def watch(build):
 
 
 def main(argv=None):
-    args = vars(parser().parse_args(argv))
+    argv = list(sys.argv[1:] if argv is None else argv)
     try:
+        options = argv[: argv.index("--")] if "--" in argv else argv
+        if "-U" in options or "--update" in options:
+            return update()
+        args = vars(parser().parse_args(argv))
+        if args.pop("update"):
+            return update()
         if args.pop("readme"):
             path = PACKAGE / "readme.md"
             if not path.exists():
@@ -195,7 +212,7 @@ def main(argv=None):
         return 0
     except KeyboardInterrupt:
         return 0
-    except (OSError, ValueError, RuntimeError, YAMLError) as error:
+    except (OSError, ValueError, RuntimeError, HTTPException, YAMLError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 

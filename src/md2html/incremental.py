@@ -7,6 +7,7 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
+from liquid import Environment as LiquidEnvironment
 from liquid import FileSystemLoader
 from liquid.exceptions import LiquidError
 
@@ -26,34 +27,27 @@ def stamp(path):
 
 
 class Templates(FileSystemLoader):
-    def __init__(self, build):
-        super().__init__(build.template_dirs)
-        self.build = build
-
     def get_source(self, env, template_name, **kwargs):
-        for directory in self.build.template_dirs:
+        for directory in self.search_path:
             path = directory / template_name
-            self.build.dependencies.add(path)
+            env.build.dependencies.add(path)
             if path.is_file():
                 break
-        source = super().get_source(env, template_name, **kwargs)
-        self.build.dependencies.add(Path(source.name))
-        analyze(self.build.liquid, source.text)
-        return source
+        return super().get_source(env, template_name, **kwargs)
 
 
-def analyze(environment, text):
-    build = environment.build
-    template = environment.from_string(text)
-    try:
-        analysis = template.analyze(include_partials=False)
-        for variable in analysis.globals.get("site", []):
-            name = variable.segments[1] if len(variable.segments) > 1 else None
-            build.collections.update([name] if isinstance(name, str) else build.collection_keys)
-    except LiquidError:
-        # Unknown Liquid syntax must not hide changes to site listings.
-        build.collections.update(build.collection_keys)
-    return template
+class Environment(LiquidEnvironment):
+    def from_string(self, source, *args, **kwargs):
+        template = super().from_string(source, *args, **kwargs)
+        try:
+            analysis = template.analyze(include_partials=False)
+            for variable in analysis.globals.get("site", []):
+                name = variable.segments[1] if len(variable.segments) > 1 else None
+                self.build.collections.update([name] if isinstance(name, str) else self.build.collection_keys)
+        except LiquidError:
+            # Unknown Liquid syntax must not hide changes to site listings.
+            self.build.collections.update(self.build.collection_keys)
+        return template
 
 
 class State:

@@ -9,7 +9,6 @@ import yaml
 from liquid.exceptions import LiquidError
 
 from . import execution
-from .incremental import analyze
 
 DIRECTIVE = re.compile(r"^\s*@(src-begin|src|include)\((.*?)\)\s*(?:#.*)?$")
 END = re.compile(r"^\s*@src-end\s*(?:#.*)?$")
@@ -57,7 +56,7 @@ class Stash:
 def liquid_render(environment, text, context, warn):
     text = re.sub(r"{%\s*include\s+([\w./-]+)\s*%}", r"{% include '\1' %}", text)
     try:
-        return analyze(environment, text).render(**context)
+        return environment.from_string(text).render(**context)
     except (LiquidError, RecursionError) as error:
         warn(f"Liquid rendering failed: {error}")
         return text
@@ -130,7 +129,7 @@ class Document:
         markup = self.build.highlighter.code(code, language, filename=source)
         label = html.escape(source.name if source else f"{language} source")
         if source:
-            href = self.build.asset_link(source, self.page)
+            href = self.build.asset_link(source, self.page.target.parent)
             label = f'<a href="{html.escape(href, quote=True)}">{label}</a>'
         if flags & {"collapsed", "collapsible", "expanded"}:
             opened = "" if "collapsed" in flags else " open"
@@ -138,10 +137,7 @@ class Document:
         else:
             markup = f'<div class="code-header">{label}</div>{markup}'
         warnings = []
-        if "noexecute" not in flags:
-            cache = execution.workspace(self.page.source, source, code, language)
-            self.build.dependencies.update([cache / "output.txt", cache / ".complete"])
-        output = execution.run(self.options, self.page.source, source, code, language, flags, warnings.append)
+        output = execution.run(self.build, self.page.source, source, code, language, flags, warnings.append)
         if output is not None:
             markup += f'<div class="code-output"><span>Output:</span><pre>{html.escape(output)}</pre></div>'
         if not self.options.execute:
@@ -263,7 +259,11 @@ class Document:
             else:
                 attrs["alt"] = part
         path = self.reference(name, self.page.source)
-        url = name if re.match(r"[\w+.-]+://", name) else self.build.asset_link(path, self.page, media=True)
+        url = (
+            name
+            if re.match(r"[\w+.-]+://", name)
+            else self.build.asset_link(path, self.page.target.parent, media=True)
+        )
         width = str(attrs.get("width") or "")
         if width.isdigit():
             width += "px"
@@ -336,16 +336,12 @@ class Document:
         ):
             body = liquid_render(self.build.liquid, body, context, self.warn)
         body = protected.restore(body)
+        renderer = Renderer(self)
+        plugins = [] if self.options.markdown_mode else ["table", "strikethrough", "task_lists", "url"]
+        rendered = mistune.create_markdown(renderer=renderer, plugins=plugins)(body)
         if not self.options.markdown_mode:
-            renderer = Renderer(self)
-            body = mistune.create_markdown(
-                renderer=renderer, plugins=["table", "strikethrough", "task_lists", "url"]
-            )(body)
-            self.html.items[self.toc_token] = self.toc(renderer.headings)
-        else:
-            renderer = Renderer(self)
-            mistune.create_markdown(renderer=renderer)(body)
-            self.html.items[self.toc_token] = self.toc(renderer.headings)
+            body = rendered
+        self.html.items[self.toc_token] = self.toc(renderer.headings)
         # Block macros must not be wrapped in paragraph elements by Markdown.
         body = re.sub(r"<p>(" + self.html.prefix + r"X[0-9]+Z)</p>", r"\1", body)
         body = self.html.restore(body)

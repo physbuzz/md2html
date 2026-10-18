@@ -88,6 +88,31 @@ def test_cache_source_only_force_and_noexecute(cli, put, tmp_path):
     cli("-F", "a.md", ok=False)
 
 
+@pytest.mark.parametrize("config_args", [(), ("--config", "md2html.json")])
+def test_no_execute_overrides_config_and_reuses_output(cli, put, tmp_path, config_args):
+    put("md2html.json", json.dumps({"execute": True, "math": "raw"}))
+    code = 'from pathlib import Path\nPath("ran").touch()\nprint("saved result")\n'
+    put("example.py", code)
+    put("a.md", "@src(example.py, execute)\n")
+    cli(*config_args, "a.md", "--no-execute")
+    assert not (tmp_path / "ran").exists()
+    assert not soup(tmp_path / "a.html").select(".code-output")
+
+    cli(*config_args, "a.md")
+    assert (tmp_path / "ran").exists()
+    (tmp_path / "ran").unlink()
+    cli(*config_args, "a.md", "--force", "--no-execute")
+    assert "saved result" in soup(tmp_path / "a.html").select_one(".code-output").text
+    assert not (tmp_path / "ran").exists()
+
+    put("example.py", code + "# changed source invalidates saved output\n")
+    cli(*config_args, "a.md", "-e", "--no-execute")
+    assert not (tmp_path / "ran").exists()
+    assert not soup(tmp_path / "a.html").select(".code-output")
+    cli(*config_args, "a.md", "--no-execute", "-e")
+    assert (tmp_path / "ran").exists()
+
+
 def test_custom_commands_workspaces_and_artifacts(cli, put, tmp_path):
     put("source folder/test.foo", "anything")
     put("page.md", "@src(source folder/test.foo)\n@src-begin(bar, execute)\nbody\n@src-end\n")

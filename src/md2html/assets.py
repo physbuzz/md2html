@@ -22,11 +22,12 @@ def data_url(path):
 
 def relocate(text, resolve):
     """Rewrite asset attributes without reserializing HTML or touching comments/scripts."""
-    changes = []
+    result, position = [], 0
     offsets = [0, *accumulate(len(line) for line in text.splitlines(keepends=True))]
 
     class Links(HTMLParser):
         def handle_starttag(self, tag, attrs):
+            nonlocal position
             original = self.get_starttag_text()
 
             def attribute(match):
@@ -47,18 +48,16 @@ def relocate(text, resolve):
                 flags=re.I | re.S,
             )
             line, column = self.getpos()
-            changes.append((offsets[line - 1] + column, original, rewritten))
+            offset = offsets[line - 1] + column
+            result.extend([text[position:offset], rewritten])
+            position = offset + len(original)
 
     Links(convert_charrefs=False).feed(text)
-    result, position = [], 0
-    for offset, original, rewritten in changes:
-        result.extend([text[position:offset], rewritten])
-        position = offset + len(original)
     result.append(text[position:])
     return "".join(result)
 
 
-def css_file(build, path, page, stack=()):
+def css_file(build, path, directory, stack=()):
     path = path.resolve()
     build.dependencies.add(path)
     if path in stack:
@@ -69,7 +68,7 @@ def css_file(build, path, page, stack=()):
         name = (match[1] or match[2]).strip(" \"'")
         if re.match(r"[\w+.-]+:|//", name):
             return match[0]
-        included = css_file(build, path.parent / name, page, (*stack, path))
+        included = css_file(build, path.parent / name, directory, (*stack, path))
         media = match[3].strip()
         return "@media " + media + " {" + included + "}" if media else included
 
@@ -80,10 +79,10 @@ def css_file(build, path, page, stack=()):
         if re.match(r"[\w+.-]+:|[/#]", name):
             return match[0]
         source = (path.parent / name).resolve()
-        build.dependencies.add(source)
         if not source.exists():
+            build.dependencies.add(source)
             return match[0]
-        url = data_url(source) if build.options.assets == "standalone" else build.asset_link(source, page)
+        url = build.asset_link(source, directory)
         return f'url("{url}")'
 
     return re.sub(r"url\(([^)]+)\)", rewrite, text)
@@ -91,6 +90,7 @@ def css_file(build, path, page, stack=()):
 
 def context(build, page, document, template):
     options = build.options
+    directory = build.output_root / "assets" if options.assets == "shared" else page.target.parent
     result = {
         "css": "",
         "math_css": "",
@@ -136,7 +136,9 @@ def context(build, page, document, template):
             css = rcssmin.cssmin(css)
         if options.assets == "shared":
             key = {"css": "page_stylesheets", "math_css": "math_stylesheets", "author": "stylesheets"}[field]
-            result[key].append(shared_css(build, page, css, name, owner))
+            target = directory / (name + ".css")
+            build.write(target, css, owner or "renderer " + name)
+            result[key].append(build.url(target, page.target.parent))
         elif field == "author":
             result["inline_stylesheets"].append(css)
         else:
@@ -153,7 +155,7 @@ def context(build, page, document, template):
                 else Path(path.name)
             )
             label = "style-" + "-".join(relative.with_suffix("").parts)
-        sheet(css_file(build, path, page), label, field, str(path))
+        sheet(css_file(build, path, directory), label, field, str(path))
 
     for name in dict.fromkeys([*values(css_paths), *values(page.data.get("css"))]):
         authored(name, "css")
@@ -161,7 +163,7 @@ def context(build, page, document, template):
         for feature in ("code", "math", "toc", "image", "warning"):
             if feature in document.features:
                 path = PACKAGE / "assets" / f"feature-{feature}.css"
-                sheet(css_file(build, path, page), feature)
+                sheet(css_file(build, path, directory), feature)
         if "code" in document.features:
             sheet(build.highlighter.css, "highlight")
     for name in dict.fromkeys([*options.stylesheets, *values(page.data.get("stylesheets"))]):
@@ -198,9 +200,9 @@ def context(build, page, document, template):
             else:
                 target = build.output_root / "assets/mathjax/woff2" / filename
                 build.copy(root / filename, target)
-                url = build.url(target, page)
+                url = build.url(target, directory)
                 if filename.removeprefix("mjx-tex-").removesuffix(".woff2") in document.fonts:
-                    result["font_preloads"].append(url)
+                    result["font_preloads"].append(build.url(target, page.target.parent))
             return f'url("{url}")'
 
         sheet(
@@ -226,19 +228,11 @@ def context(build, page, document, template):
                         if source.is_file():
                             build.copy(source, destination / source.relative_to(origin))
             config.update(
-                loader={"paths": {"fonts": build.url(target.parent, page)}},
+                loader={"paths": {"fonts": build.url(target.parent, page.target.parent)}},
                 output={"fontPath": "[fonts]/%%FONT%%-font"},
             )
-            result["mathjax_src"] = build.url(target, page)
+            result["mathjax_src"] = build.url(target, page.target.parent)
         elif options.assets == "standalone":
             document.warn("browser MathJax uses the CDN with standalone assets")
         result["mathjax_config"] = "window.MathJax=" + json.dumps(config) + ";"
     return result
-
-
-def shared_css(build, page, css, name, owner=None):
-    # Asset URLs in a shared sheet are relative to the sheet, not its page.
-    css = re.sub(r'url\("([^"#:]+)"\)', lambda m: 'url("' + build.css_url(m[1], page) + '")', css)
-    target = build.output_root / "assets" / (name + ".css")
-    build.write(target, css, owner or "renderer " + name)
-    return build.url(target, page)

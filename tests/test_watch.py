@@ -22,7 +22,7 @@ def until(check, timeout=12):
 
 @contextmanager
 def watching(tmp_path, *arguments):
-    with (tmp_path / "watch.log").open("w") as log:
+    with (tmp_path / ".watch.log").open("w") as log:
         process = subprocess.Popen(
             [sys.executable, "-m", "md2html", *map(str, arguments)],
             cwd=tmp_path,
@@ -79,7 +79,7 @@ def test_watch_without_server_external_include_and_recovery(cli, put, tmp_path):
         with socket.socket() as sock:
             assert sock.connect_ex(("127.0.0.1", port)) != 0
         put("external/part.md", "@src-begin(python)\n")
-        until(lambda: "missing @src-end" in (tmp_path / "watch.log").read_text())
+        until(lambda: "missing @src-end" in (tmp_path / ".watch.log").read_text())
         put("external/part.md", "# RECOVERED")
         until(lambda: "RECOVERED" in target.read_text())
 
@@ -108,7 +108,7 @@ def test_watch_pagination_moves_deletes_and_static_assets(cli, put, tmp_path):
     with watching(tmp_path, *args, "-w"):
         index = tmp_path / "html/blog/index.html"
         second = tmp_path / "html/blog/page2/index.html"
-        until(lambda: "Built 0 files" in (tmp_path / "watch.log").read_text())
+        until(lambda: "Built 0 files" in (tmp_path / ".watch.log").read_text())
         put("site/_posts/2026-01-02-two.md", "---\ntitle: TWO\n---\nPost")
         until(lambda: "TWO" in index.read_text() and "ONE" in second.read_text())
         (tmp_path / "site/_posts/2026-01-01-one.md").rename(tmp_path / "site/_posts/2026-01-03-one.md")
@@ -118,3 +118,35 @@ def test_watch_pagination_moves_deletes_and_static_assets(cli, put, tmp_path):
         put("site/img/share.gif", "UNREFERENCED")
         until(lambda: (tmp_path / "html/img/share.gif").read_text() == "UNREFERENCED")
         assert independent.stat().st_mtime_ns == before
+
+
+@pytest.mark.parametrize("flag", ["-rw", "-rs"])
+def test_recursive_current_directory_ignores_output_events(put, tmp_path, flag):
+    put("index.md", "![image](picture.svg)")
+    put("picture.svg", "<svg/>")
+    put("nested/page.md", "FIRST")
+    with watching(tmp_path, flag, ".", "-o", "html", "--math", "raw", "--port", free_port()) as process:
+        target = tmp_path / "html/nested/page.html"
+        log = tmp_path / ".watch.log"
+        until(lambda: "Built " in log.read_text())
+        if flag == "-rs":
+            until(lambda: "Serving http" in log.read_text())
+        else:
+            time.sleep(0.3)
+        assert 'src="picture.svg"' in (tmp_path / "html/index.html").read_text()
+        put("nested/page.md", "SECOND")
+        until(lambda: "SECOND" in target.read_text())
+        put("node_modules/example/file.js", "UNREFERENCED")
+        copied = tmp_path / "html/node_modules/example/file.js"
+        until(lambda: copied.read_text() == "UNREFERENCED")
+        put("node_modules/example/file.js", "UPDATED")
+        until(lambda: copied.read_text() == "UPDATED")
+        time.sleep(0.5)
+        builds = log.read_text().count("Built ")
+        put("html/manual/nested/file.md", "OUTPUT ONLY")
+        target.write_text(target.read_text() + "<!-- output edit -->")
+        time.sleep(1)
+        assert log.read_text().count("Built ") == builds
+        assert not (tmp_path / "html/html").exists()
+        assert not (tmp_path / "html/manual/nested/file.html").exists()
+        assert process.poll() is None

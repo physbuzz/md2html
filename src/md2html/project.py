@@ -13,12 +13,11 @@ from urllib.parse import quote, unquote, urlsplit
 from xml.etree import ElementTree as ET
 
 import yaml
-from liquid import Environment
 
 from . import assets
 from .config import DOCUMENTS, MARKDOWN, PACKAGE, values
 from .highlight import Highlighter
-from .incremental import State, Templates
+from .incremental import Environment, State, Templates, stamp
 from .math import Math
 from .render import Document, frontmatter, liquid_render, slugify
 
@@ -76,7 +75,7 @@ class Build:
             self.source_root / "_layouts",
             PACKAGE / "default_templates",
         ]
-        self.liquid = Environment(loader=Templates(self), autoescape=False)
+        self.liquid = Environment(loader=Templates(self.template_dirs), autoescape=False)
         self.liquid.build = self
         self.liquid.context_depth_limit = 30
         self.liquid.add_filter("relative_url", self.relative_url)
@@ -94,12 +93,8 @@ class Build:
     def relative_url(self, value):
         return str(self.site_config.get("baseurl", "")).rstrip("/") + "/" + str(value or "").lstrip("/")
 
-    def url(self, target, page):
-        return quote(os.path.relpath(target, page.target.parent).replace(os.sep, "/"), safe="/:@")
-
-    def css_url(self, url, page):
-        path = (page.target.parent / unquote(url)).resolve()
-        return quote(os.path.relpath(path, self.output_root / "assets"), safe="/:@")
+    def url(self, target, directory):
+        return quote(os.path.relpath(target, directory).replace(os.sep, "/"), safe="/:@")
 
     def claim(self, target, owner):
         target = target.resolve()
@@ -109,14 +104,14 @@ class Build:
         if previous != owner:
             self.warnings.append(f"output collision at {target}: {previous} and {owner}; skipping {owner}")
             return None
+        if target in self.source_files:
+            self.warnings.append(f"output would overwrite source: {target}; skipping")
+            return None
         return target
 
     def write(self, target, text, owner):
         target = self.claim(target, owner)
         if target is None:
-            return
-        if target in self.source_files:
-            self.warnings.append(f"output would overwrite source: {target}; skipping")
             return
         self.products.add(target)
         data = text.encode("utf-8")
@@ -130,33 +125,26 @@ class Build:
 
     def copy(self, source, target):
         source, target = source.resolve(), target.resolve()
+        if source == target:
+            return
         if self.claim(target, str(source)) is None:
             return
         self.products.add(target)
-        if source == target or target in self.copied:
-            return
-        if target in self.source_files:
-            self.warnings.append(f"output would overwrite source: {target}; skipping")
-            return
-        if (
-            target.is_file()
-            and source.stat().st_mtime_ns == target.stat().st_mtime_ns
-            and source.stat().st_size == target.stat().st_size
-        ):
+        if target in self.copied or target.is_file() and stamp(source) == stamp(target):
             return
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
         self.copied.add(target)
 
-    def asset_link(self, source, page, *, media=False):
+    def asset_link(self, source, directory, *, media=False):
         source = source.resolve()
         self.dependencies.add(source)
         if not source.is_file():
-            return self.url(source, page)
+            return self.url(source, directory)
         if self.options.assets == "standalone" and (not media or self.options.images.get("embed", True)):
             return assets.data_url(source)
         if self.output_root == self.source_root and self.output_file:
-            return self.url(source, page)
+            return self.url(source, directory)
         if source.is_relative_to(self.source_root):
             relative = source.relative_to(self.source_root)
         else:
@@ -164,29 +152,45 @@ class Build:
             relative = Path("assets/files") / digest / source.name
         target = self.output_root / relative
         self.copy(source, target)
-        return self.url(target, page)
+        return self.url(target, directory)
 
     def excluded(self, path, root):
         relative = path.relative_to(root)
-        if not self.output_file and path.is_relative_to(self.output_root):
+        if (not self.output_file and path.is_relative_to(self.output_root)) or relative == Path(
+            "md2html.json"
+        ):
             return True
 
         def matches(patterns):
             return any(
-                relative.as_posix() == pattern.strip("/")
-                or relative.as_posix().startswith(pattern.strip("/") + "/")
-                or relative.match(pattern.strip("/"))
+                relative.is_relative_to(pattern.strip("/")) or relative.match(pattern.strip("/"))
                 for pattern in patterns
             )
 
         if matches([*self.options.exclude, *values(self.site_config.get("exclude"))]):
             return True
-        if self.options.output_mode == "jekyll" and matches(values(self.site_config.get("include"))):
-            return False
-        private = {"md2html.json", "Gemfile", "Gemfile.lock", "node_modules", "vendor", "venv"}
-        return any(
-            part in private or part.startswith(".") or part.startswith("_") and part != "_posts"
-            for part in relative.parts
+        if self.options.output_mode == "jekyll":
+            if matches(values(self.site_config.get("include", [".htaccess"]))):
+                return False
+            if matches(
+                [
+                    "gemfiles",
+                    "Gemfile",
+                    "Gemfile.lock",
+                    "node_modules",
+                    "vendor/bundle",
+                    "vendor/cache",
+                    "vendor/gems",
+                    "vendor/ruby",
+                ]
+            ):
+                return True
+            return any(
+                part != "_posts" and (part.startswith((".", "_", "#", "~")) or part.endswith("~"))
+                for part in relative.parts
+            )
+        return any(part.startswith(".") for part in relative.parts) or any(
+            part.startswith("_") and part != "_posts" for part in relative.parts[:-1]
         )
 
     def discover(self):
@@ -389,12 +393,7 @@ class Build:
             self.dependencies.add(source)
             if not source.is_file() or source.suffix.lower() in DOCUMENTS:
                 return name
-            url = self.asset_link(source, page, media=True)
-            return (
-                url
-                + ("?" + parsed.query if parsed.query else "")
-                + ("#" + parsed.fragment if parsed.fragment else "")
-            )
+            return parsed._replace(path=self.asset_link(source, page.target.parent, media=True)).geturl()
 
         return assets.relocate(text, resolve)
 

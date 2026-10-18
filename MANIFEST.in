@@ -1,4 +1,4 @@
-include makefile md2html.spec package.json package-lock.json
+include makefile md2html.spec package.json package-lock.json uv.lock .python-version .node-version
 recursive-include examples *.md
 recursive-include tests *.py *.cjs
 include tools/browser_pages.py
