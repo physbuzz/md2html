@@ -1,3 +1,5 @@
+import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -14,9 +16,12 @@ def rouge():
 
 @pytest.fixture
 def cli(tmp_path):
+    command = os.environ.get("MD2HTML_TEST_COMMAND")
+    command = shlex.split(command) if command else [sys.executable, "-m", "md2html"]
+
     def invoke(*args, ok=True, cwd=None):
         result = subprocess.run(
-            [sys.executable, "-m", "md2html", *map(str, args)],
+            [*command, *map(str, args)],
             cwd=cwd or tmp_path,
             capture_output=True,
             text=True,
