@@ -578,7 +578,7 @@ def test_included_markdown_assets_follow_the_fragment(cli, put, tmp_path):
     assert image["src"] == "data:image/svg+xml;base64,PHN2Zy8+"
 
 
-def test_shared_authored_stylesheets_copy_imports_and_resources(cli, put, tmp_path):
+def test_shared_authored_stylesheets_preserve_imports_and_urls(cli, put, tmp_path):
     put("styles/main.css", '@import url("nested/colors.css"); body { background: url("icon.svg"); }')
     put("styles/nested/colors.css", "body { color: teal; }")
     put("styles/icon.svg", "<svg/>")
@@ -598,11 +598,10 @@ def test_shared_authored_stylesheets_copy_imports_and_resources(cli, put, tmp_pa
     target = tmp_path / "public/nested/a.html"
     doc = soup(target)
     sheet = target.parent / doc.select('link[rel="stylesheet"]')[-1]["href"]
-    assert "color:teal" in sheet.read_text()
-    import re
-
-    for url in re.findall(r'url\("([^"]+)"\)', sheet.read_text()):
-        assert (sheet.parent / url).is_file()
+    assert '@import url("nested/colors.css")' in sheet.read_text()
+    assert 'url("icon.svg")' in sheet.read_text()
+    assert "color:teal" not in sheet.read_text()
+    assert not list((tmp_path / "public").rglob("*.svg"))
 
 
 def test_indented_display_math_preserves_following_content(cli, put, tmp_path):

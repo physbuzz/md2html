@@ -87,7 +87,7 @@ def run(build, page, source, code, language, flags, warn):
     if complete.exists() and output.exists() and not options.force_execution:
         return output.read_text()
     if not options.execute:
-        if options.verbose and "execute" in flags:
+        if options.verbose:
             warn(
                 f"cached output unavailable for {source or language + ' inline snippet'}; use --execute to generate it"
             )

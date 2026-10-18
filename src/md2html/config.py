@@ -114,10 +114,11 @@ def resolve(cli):
     options.templates = [Path(p) for p in options.templates]
     if not config and len(options.input) == 1:
         options.root = options.input[0] if options.input[0].is_dir() else options.input[0].parent
-    if options.output is None and (len(options.input) > 1 or options.input[0].is_dir()):
-        options.output = root / (
-            "_site" if options.site_mode else "markdown" if options.markdown_mode else "html"
-        )
+    if options.output is None:
+        if options.site_mode:
+            options.output = root / "_site"
+        elif options.markdown_mode:
+            raise ValueError("Jekyll Markdown export requires --output")
     if options.output_mode != "pages":
         options.recursive = True
     if options.assets == "auto":

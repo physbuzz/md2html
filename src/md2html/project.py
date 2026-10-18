@@ -45,13 +45,12 @@ class Build:
         self.options = options
         self.source_root = Path(os.path.commonpath([p if p.is_dir() else p.parent for p in options.input]))
         self.single = len(options.input) == 1 and options.input[0].is_file()
-        self.output_file = self.single and (
-            options.output is None or bool(options.output.suffix) and not options.output.is_dir()
+        self.in_place = options.output is None
+        self.output_file = (
+            self.single and not self.in_place and bool(options.output.suffix) and not options.output.is_dir()
         )
         self.output_root = (
-            (options.output.parent if options.output else options.input[0].parent)
-            if self.output_file
-            else options.output or self.source_root / "html"
+            options.output.parent if self.output_file else options.output or self.source_root
         ).resolve()
         self.dependencies = set()
         self.products = set()
@@ -143,7 +142,7 @@ class Build:
             return self.url(source, directory)
         if self.options.assets == "standalone" and (not media or self.options.images.get("embed", True)):
             return assets.data_url(source)
-        if self.output_root == self.source_root and self.output_file:
+        if self.in_place or self.output_root == self.source_root and self.output_file:
             return self.url(source, directory)
         if source.is_relative_to(self.source_root):
             relative = source.relative_to(self.source_root)
@@ -156,9 +155,9 @@ class Build:
 
     def excluded(self, path, root):
         relative = path.relative_to(root)
-        if (not self.output_file and path.is_relative_to(self.output_root)) or relative == Path(
-            "md2html.json"
-        ):
+        if (
+            not self.in_place and not self.output_file and path.is_relative_to(self.output_root)
+        ) or relative == Path("md2html.json"):
             return True
 
         def matches(patterns):
@@ -200,10 +199,12 @@ class Build:
         for source in self.options.input:
             if not source.exists():
                 raise ValueError(f"input does not exist: {source}")
-            if source.is_dir() and (self.output_root == source or source.is_relative_to(self.output_root)):
+            if not self.in_place and source.is_dir() and source.is_relative_to(self.output_root):
                 raise ValueError("output directory must not contain an input directory")
             paths = source.glob("**/*" if self.options.recursive else "*") if source.is_dir() else [source]
             for path in sorted(paths):
+                if self.in_place and source.is_dir() and path.suffix.lower() not in MARKDOWN:
+                    continue
                 if not path.is_file() or source.is_dir() and self.excluded(path, source):
                     continue
                 path = path.resolve()
@@ -285,10 +286,11 @@ class Build:
                 target = self.output_root / output_path(url)
                 if self.options.markdown_mode:
                     target = self.output_root / relative
-                if self.output_file:
-                    target = self.options.output or path.with_suffix(
-                        ".md" if self.options.markdown_mode else ".html"
-                    )
+                if self.in_place:
+                    target = path.with_suffix(".html") if path.suffix.lower() in MARKDOWN else path
+                    url = "/" + target.relative_to(self.output_root).as_posix()
+                elif self.output_file:
+                    target = self.options.output
                 if target.resolve() == path:
                     self.warnings.append(f"source and output are the same file: {path}; skipping")
                     continue

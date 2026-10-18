@@ -141,7 +141,9 @@ class Changes(FileSystemEventHandler):
             if any(part.startswith(".") for part in path.parts) and path not in self.build.dependencies:
                 continue
             if path in self.build.owners or (
-                not self.build.output_file and path.is_relative_to(self.build.output_root)
+                not self.build.in_place
+                and not self.build.output_file
+                and path.is_relative_to(self.build.output_root)
             ):
                 continue
             self.changed.set()

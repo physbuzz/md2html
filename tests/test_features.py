@@ -1,9 +1,7 @@
 """User-visible build choices and dependency behavior."""
 
 import json
-import re
 from pathlib import Path
-from urllib.parse import unquote
 
 import pytest
 from bs4 import BeautifulSoup
@@ -101,8 +99,19 @@ def test_listed_files_default_to_standalone(cli, put, tmp_path, arguments):
     put("other.md", "Other page")
     put("picture.svg", "<svg/>")
     cli(*arguments, "--math", "raw")
-    target = tmp_path / ("html/page.html" if "other.md" in arguments else "page.html")
-    assert 'src="data:image/svg+xml;base64,' in target.read_text()
+    assert 'src="data:image/svg+xml;base64,' in (tmp_path / "page.html").read_text()
+    if "other.md" in arguments:
+        assert "Other page" in (tmp_path / "other.html").read_text()
+    assert not (tmp_path / "html").exists()
+
+
+@pytest.mark.parametrize("source", ["page.md", "."])
+def test_site_default_destination_and_explicit_markdown_export(cli, put, tmp_path, source):
+    put("page.md", "# Hello")
+    cli(source, "--output-mode", "site", "--math", "raw")
+    assert "Hello" in (tmp_path / "_site/page.html").read_text()
+    assert "requires --output" in cli(source, "--jekyll-markdown", ok=False).stderr
+    assert not (tmp_path / "markdown").exists()
 
 
 @pytest.mark.parametrize("flags", [(), ("-r",)])
@@ -135,12 +144,23 @@ def test_explicit_mode_overrides_directory_default(cli, put, tmp_path):
     assert 'src="data:image/svg+xml;base64,' in (tmp_path / "pages/page.html").read_text()
 
 
-def test_missing_explicit_execution_cache_is_verbose_only(cli, put, tmp_path):
-    put("a.md", '@src-begin(python, execute)\nprint("HELLO")\n@src-end\n')
+@pytest.mark.parametrize("flags", ["", ", execute"])
+@pytest.mark.parametrize("inline", [False, True])
+def test_missing_execution_cache_is_verbose_only(cli, put, tmp_path, flags, inline):
+    put("snippet.py", "pass\n")
+    put("a.md", f"@src-begin(python{flags})\npass\n@src-end\n" if inline else f"@src(snippet.py{flags})")
     assert "cached output unavailable" not in cli("a.md", "--math", "raw").stderr
     assert "cached output unavailable" in cli("a.md", "--math", "raw", "-v").stderr
     assert "cached output unavailable" not in (tmp_path / "a.html").read_text()
     cli("a.md", "--math", "raw", "-e")
+    assert "cached output unavailable" not in cli("a.md", "--math", "raw", "-v").stderr
+    # Empty successful output is cached too; changing the source invalidates it.
+    if inline:
+        put("a.md", f"@src-begin(python{flags})\nprint('changed')\n@src-end\n")
+    else:
+        put("snippet.py", "print('changed')\n")
+    assert "cached output unavailable" in cli("a.md", "--math", "raw", "-v").stderr
+    put("a.md", "@src(snippet.py, noexecute)")
     assert "cached output unavailable" not in cli("a.md", "--math", "raw", "-v").stderr
 
 
@@ -316,24 +336,24 @@ def test_layout_errors_warn_and_leave_content(cli, put, tmp_path):
 
 
 @pytest.mark.parametrize("assets", ["standalone", "shared"])
-def test_css_resources_resolve_from_stylesheets(cli, put, tmp_path, assets):
+def test_css_resources_embed_only_in_standalone_pages(cli, put, tmp_path, assets):
     put("notes/a.md", "Hello")
     put("notes/deep/b.md", "Nested")
-    put("notes/styles/main.css", '@import "nested/extra.css" screen; body { background: url("root.svg"); }')
+    css = '@import "nested/extra.css" screen; body { background: url("root.svg"); }'
+    put("notes/styles/main.css", css)
     put("notes/styles/nested/extra.css", 'p { background: url("glyph.svg"); }')
     put("notes/styles/nested/glyph.svg", "<svg>GLYPH</svg>")
     put("notes/styles/root.svg", "<svg>ROOT</svg>")
     cli(
-        "notes",
-        "-r",
-        "--output-mode",
-        "pages",
+        "notes/a.md",
+        "notes/deep/b.md",
         "--assets",
         assets,
         "--math",
         "raw",
         "--css",
         "notes/styles/main.css",
+        "--no-minify-css",
         "-o",
         "html",
     )
@@ -341,14 +361,44 @@ def test_css_resources_resolve_from_stylesheets(cli, put, tmp_path, assets):
         page = tmp_path / "html" / name
         document = BeautifulSoup(page.read_text(), "html.parser")
         if assets == "standalone":
+            assert "@import" not in document.style.text
+            assert "@media screen" in document.style.text
             assert document.style.text.count("data:image/svg+xml;base64,") == 2
+            assert "PHN2Zz5HTFlQSDwvc3ZnPg==" in document.style.text
+            assert "PHN2Zz5ST09UPC9zdmc+" in document.style.text
         else:
             sheet = (page.parent / document.select_one('link[rel="stylesheet"]')["href"]).resolve()
-            urls = re.findall(r'url\("([^\"]+)"\)', sheet.read_text())
-            assert {(sheet.parent / unquote(url)).read_text() for url in urls} == {
-                "<svg>GLYPH</svg>",
-                "<svg>ROOT</svg>",
-            }
+            assert sheet.read_text() == css
+    assert not list((tmp_path / "html").rglob("*.svg"))
+    assert not list((tmp_path / "html").rglob("extra.css"))
+
+
+def test_embedded_css_dependencies_and_external_references(cli, put, tmp_path):
+    put("a.md", "Hello")
+    put("styles/main.css", '@import url("nested/extra.css");')
+    imported = put(
+        "styles/nested/extra.css",
+        'p { background: url("glyph.svg"); } '
+        '@font-face { font-family: custom; src: url("font.woff2"); } '
+        'body { background: url("https://example.com/bg.png"); filter: url("#effect"); }',
+    )
+    image = put("styles/nested/glyph.svg", "<svg>FIRST</svg>")
+    put("styles/nested/font.woff2", "font bytes")
+    args = ("a.md", "--css", "styles/main.css", "--math", "raw")
+    cli(*args)
+    target = tmp_path / "a.html"
+    text = target.read_text()
+    assert "data:font/woff2;base64," in text
+    assert 'url("https://example.com/bg.png")' in text and 'url("#effect")' in text
+    assert "Built 0 files" in cli(*args).stdout
+    image.write_text("<svg>SECOND</svg>")
+    cli(*args)
+    assert target.read_text() != text
+    imported.write_text("p { color: teal; }")
+    cli(*args)
+    assert "color:teal" in target.read_text()
+    imported.write_text('@import "../main.css";')
+    assert "CSS import cycle" in cli(*args, ok=False).stderr
 
 
 def test_raw_math_in_jekyll_is_configurable(cli, put, tmp_path):

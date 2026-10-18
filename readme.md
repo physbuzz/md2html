@@ -1,3 +1,6 @@
+> [!WARNING]  
+> This was vibecoded. I used OAI's Astra and a few rewrites to keep the complexity minimal (5.6kloc -> 2k lines of python).
+
 # md2html
 
 `md2html` turns Markdown notes into standalone HTML pages, a small static site, or Markdown for Jekyll to render. It's aimed at quick math notes, so on my personal computer I can do `md2html notes.md && upload notes.html` and have a shareable link to a beautiful standalone webpage ready. By default this is an offline standalone page with static CommonHTML and the relevant math fonts embedded, but you can configure it however. While I'm writing textbook notes, I'll have `md2html -erf sicp -o html --serve` running in the background, so I can watch the page update as I code and take notes.
@@ -48,6 +51,7 @@ Examples:
 # Turn test.md into test.html, with the default template and inlined CSS.
 md2html test.md
 md2html test.md -o index.html
+md2html note1.md note2.md # creates note1.html and note2.html beside their sources
 md2html note1.md note2.md -o html # two standalone pages
 # Use the bundled barebones template.
 md2html --template barebones.html test.md -o test-barebones.html
@@ -62,7 +66,7 @@ md2html --math svg test.md -o test-svg.html
 
 Configuration can be done via CLI or via a config file `md2html.json`. All CLI options and their JSON counterparts:
 
-- `-o, --output PATH`: output file or directory. JSON: `"output"`.
+- `-o, --output PATH`: output file or directory. Without an output setting, pages are written beside their sources and site builds use `_site/`. JSON: `"output"`.
 - `-v, --verbose`: report additional diagnostics.
 - `-e, --execute`: run executable examples, cache their outputs, and display outputs in the webpage. JSON: `"execute": true`.
 - `--no-execute`: disable snippet execution even when `md2html.json` enables it; cached outputs still render.
@@ -115,7 +119,7 @@ CLI args override JSON settings.
 
 For a more full example, run `md2html --example-config -` to print JSON to stdout.
 
-Paths inside the config file are resolved relative to that file's path. config files are not watched, so if you update your config file while you're watching and serving, you need to rerun your watch/serve command.
+Paths inside the config file are resolved relative to its directory. Restart your watch/serve command after changing configuration settings.
 
 |Key|Meaning|
 |---|---|
@@ -248,33 +252,35 @@ Markdown is run through python-liquid, then rendered with Mistune. YAML frontmat
 - A Markdown page without a `layout` uses the page template (`--template`, default `page.html`). The bundled `page.html` includes reader controls for theme, width, typeface, and text size; `barebones.html` is a simpler starting point for your own. Custom layouts pull in styles and scripts through the `md2html` asset fields; see `md2html --example-template -`.
 - Templates and layouts are looked up in configured `templates` directories in order, then `_templates` beside the config file, then `_includes` and `_layouts` in the source root, then the bundled templates. Layout names may omit `.html`.
 - With no configured `css`, a template uses its adjacent `.css` file if present, otherwise the bundled base CSS. Page `css` and `stylesheets` append to the configured lists; page `feature_css` overrides the global setting.
-- Configured CSS paths resolve beside the config file and command-line paths from the working directory; relative frontmatter paths search the project root, the page directory, then the template directories. Local `@import`s and relative URLs inside a stylesheet resolve beside it and follow the asset policy. Put shared styles in `assets/`.
+- Configured CSS paths resolve beside the config file and command-line paths from the working directory; relative frontmatter paths search the project root, the page directory, then the template directories. Standalone pages expand local relative CSS `@import`s and embed resources referenced by `url(...)`, resolving them beside the stylesheet. Other asset modes leave these references as written; directory builds copy static files normally. Shared generated stylesheets go in `assets/`.
 
 ### Sites, posts, and Jekyll
 
-Native `site` mode provides pages, posts, layouts, includes, tags, categories, pagination, and an Atom feed. `--jekyll` reads an existing `_config.yml` and layouts but skips plugins, themes, `_data`, and Sass. `--jekyll-markdown` expands md2html directives and leaves the remaining Markdown and Liquid for Jekyll to render.
+Native `site` mode provides pages, posts, layouts, includes, tags, categories, pagination, and an Atom feed. `--jekyll` reads an existing `_config.yml` and layouts but skips plugins, themes, `_data`, and Sass. `--jekyll-markdown` expands md2html directives and leaves the remaining Markdown and Liquid for Jekyll to render; give it an explicit output, such as `md2html --jekyll-markdown note.md -o expanded.md`.
 
 - Posts live in `_posts/YYYY-MM-DD-title.md`. The filename supplies the date and default slug; frontmatter `slug` overrides it. Native post URLs default to `/:year/:month/:day/:title.html`; `--jekyll` defaults to Jekyll's category-prefixed dated URLs. Set `site.permalink` to a pattern built from `:year`, `:month`, `:day`, `:title`, `:slug`, and `:categories`.
 - A per-page `permalink` is a literal URL such as `/notes/integrals/`, not a pattern; a trailing slash writes `index.html` in that directory.
-- `hidden: true` drops a post from pagination but keeps it in collections and feeds. In Jekyll mode, `published: false` excludes a document, and a frontmatter-free document is copied unchanged, as Jekyll does; native pages need no frontmatter.
+- `hidden: true` drops a post from pagination but keeps it in collections and feeds. In Jekyll mode, `published: false` excludes a document, and ordinary pages without frontmatter are copied unchanged; `_posts` files are still rendered. Native pages need no frontmatter.
 - `site.posts`, `site.tags`, and `site.categories` index `_posts`. `site.pages` holds every discovered page in native mode; `--jekyll` leaves posts out of it, as Jekyll does.
-- `site.title` defaults to the source directory's name. `site.author` is a name or an object with `name`, `email`, and `url` (or `uri`), and defaults to the site title. Posts get an `id` from their URL.
-- Site builds write `/feed.xml` with the newest twenty posts unless an input already supplies that path.
-- `paginate` and `paginate_path` in the config paginate any `index.html`/`index.md`, including nested ones.
+- `site.title` defaults to the source directory's name. Posts get an `id` from their URL.
+- Site builds write `/feed.xml` with the newest twenty posts unless an input already supplies that path. The feed uses `site.author`, either a name or an object with `name`, `email`, and `url` (or `uri`); without it, the feed uses the site title as the author.
+- `paginate` and `paginate_path` in the config paginate one `index.html`/`index.md`: the closest index above `paginate_path`. For example, `/blog/page:num/` selects `blog/index.html` if present, otherwise the root index.
 
-### Variables
+### Liquid variables
 
-|Variable|Useful values|
+Use `{{ ... }}` to insert a value and `{% ... %}` for loops, conditions, and includes. Frontmatter fields belong to `page`; values under `"site"` in `md2html.json` belong to `site`. For example, `title: Gaussian Integral` in a page's frontmatter gives you `{{ page.title }}`.
+
+|Variable|How to use it|
 |---|---|
-|`page`|Frontmatter plus `title`, `name`, `path`, `url`, `tags`, `categories`, and `excerpt`.|
-|`site`|Configured values such as `title`, `url`, and `baseurl`, plus `time`, `pages`, `posts`, `tags`, `categories`, `tag_list`, and `category_list`.|
-|`paginator`|`posts`, `page`, `total_pages`, `previous_page_path`, and `next_page_path` on a paginated index.|
-|`content`|The rendered page body inside a template or layout.|
-|`md2html`|Asset values and feature booleans such as `stylesheets`, `css`, `uses_mathjax_chtml`, `has_code`, and `has_toc`.|
+|`page`|The current page's frontmatter and generated metadata: `title`, `name`, `path`, `url`, `tags`, `categories`, and `excerpt`. Custom frontmatter fields work too.|
+|`site`|Your site settings, plus collections to build listings from: `site.pages`, `site.posts`, and posts grouped by tag or category in `site.tags` and `site.categories`. `site.time` is the build time.|
+|`paginator`|On the paginated index, loop over `paginator.posts` for this page's posts. `page` and `total_pages` give the page numbers; `previous_page_path` and `next_page_path` give navigation links, or are empty at the ends.|
+|`content`|In a template or layout, `{{ content }}` inserts the rendered page body.|
+|`md2html`|Generated assets for custom templates: `css` and `math_css` contain inline CSS; `page_stylesheets`, `math_stylesheets`, and `stylesheets` are lists of stylesheet URLs. Feature flags such as `has_code`, `has_toc`, and `uses_mathjax_chtml` let a template add optional elements. See `--example-template -` for their use.|
 
-The usual `if`, `unless`, `for`, `assign`, and `include` tags are available, along with filters such as `default`, `date`, `where`, `sort`, `map`, `join`, `escape`, `relative_url`, and `absolute_url`.
+The usual `if`, `unless`, `for`, `assign`, and `include` tags are available, along with filters such as `default`, `date`, `where`, `sort`, `map`, `join`, and `escape`. Use `relative_url` for links within your site (it adds `site.baseurl`), or `absolute_url` to include `site.url` as well.
 
-### Examples
+#### Examples
 
 A title and a post list:
 
@@ -317,14 +323,8 @@ tags: [math, calculus]
 
 What gets built:
 
-- Markdown inputs are rendered; HTML, HTM, and XML inputs get Liquid only and keep their suffixes; everything else is copied as a static file, whether or not a page references it.
-- Native builds skip dotfiles and dot-directories, underscore directories other than `_posts`, `md2html.json` at the input root, and the output directory, which is also never watched. Jekyll mode applies [Jekyll's default exclusions](https://jekyllrb.com/docs/configuration/default/), and `include` in `_config.yml` can opt paths back in. Explicit `exclude` rules always win.
-
-Where it goes:
-
-- One Markdown file with no `-o` is written beside its source. Several inputs with `-o public` keep their relative paths below `public`.
-- Directory or multi-file inputs with no `-o` go to `_site/` in site and Jekyll modes, `html/` in pages mode, or `markdown/` in Jekyll Markdown mode, relative to the config file or the working directory.
-- HTML/HTM/XML inputs and single-file Jekyll Markdown exports keep their suffixes, so give them a distinct `-o` destination.
+- Markdown inputs are rendered; HTML, HTM, and XML inputs get Liquid only and keep their suffixes, so give them a distinct output destination. Directory builds also copy other files as static assets, whether or not a page references them. With `--output-mode pages` and no output destination, only Markdown files are built beside their sources; other files stay in place.
+- Native directory builds skip dotfiles and dot-directories, underscore directories other than `_posts`, `md2html.json` at the input root, and any separate output directory. Generated files are ignored while watching. Jekyll mode applies [Jekyll's default exclusions](https://jekyllrb.com/docs/configuration/default/), and `include` in `_config.yml` can opt paths back in. Explicit `exclude` rules always win.
 
 What travels with a page:
 

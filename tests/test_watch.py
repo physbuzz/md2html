@@ -44,6 +44,37 @@ def free_port():
         return sock.getsockname()[1]
 
 
+@pytest.mark.parametrize("directory", [False, True])
+def test_multiple_pages_build_and_watch_beside_sources(cli, put, tmp_path, directory):
+    put("notes/left/page.md", "FIRST")
+    put("notes/right/page.md", "OTHER")
+    put("notes/authored.html", "KEEP")
+    arguments = (
+        ("--output-mode", "pages", "-r", "notes")
+        if directory
+        else ("notes/left/page.md", "notes/right/page.md")
+    )
+    arguments += ("--math", "raw")
+    cli(*arguments)
+    left = tmp_path / "notes/left/page.html"
+    right = tmp_path / "notes/right/page.html"
+    assert "FIRST" in left.read_text() and "OTHER" in right.read_text()
+    before = right.stat().st_mtime_ns
+    with watching(tmp_path, *arguments, "-w"):
+        log = tmp_path / ".watch.log"
+        until(lambda: "Built 0 files" in log.read_text())
+        put("notes/left/page.md", "SECOND")
+        until(lambda: "SECOND" in left.read_text())
+        assert right.stat().st_mtime_ns == before
+        time.sleep(0.5)
+        builds = log.read_text().count("Built ")
+        left.write_text(left.read_text() + "<!-- output edit -->")
+        time.sleep(0.7)
+        assert log.read_text().count("Built ") == builds
+    assert (tmp_path / "notes/authored.html").read_text() == "KEEP"
+    assert not list(tmp_path.rglob("html"))
+
+
 @pytest.mark.parametrize(
     "destination,target",
     [

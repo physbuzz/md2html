@@ -57,7 +57,7 @@ def relocate(text, resolve):
     return "".join(result)
 
 
-def css_file(build, path, directory, stack=()):
+def embed_css(build, path, stack=()):
     path = path.resolve()
     build.dependencies.add(path)
     if path in stack:
@@ -66,26 +66,22 @@ def css_file(build, path, directory, stack=()):
 
     def imported(match):
         name = (match[1] or match[2]).strip(" \"'")
-        if re.match(r"[\w+.-]+:|//", name):
+        if re.match(r"[\w+.-]+:|[/#]", name):
             return match[0]
-        included = css_file(build, path.parent / name, directory, (*stack, path))
+        included = embed_css(build, path.parent / name, (*stack, path))
         media = match[3].strip()
         return "@media " + media + " {" + included + "}" if media else included
 
-    text = re.sub(r"@import\s+(?:url\(\s*([^)]+)\)|([\"'][^\"']+[\"']))\s*([^;]*);", imported, text)
-
-    def rewrite(match):
+    def resource(match):
         name = match[1].strip(" \"'")
         if re.match(r"[\w+.-]+:|[/#]", name):
             return match[0]
         source = (path.parent / name).resolve()
-        if not source.exists():
-            build.dependencies.add(source)
-            return match[0]
-        url = build.asset_link(source, directory)
-        return f'url("{url}")'
+        build.dependencies.add(source)
+        return f'url("{data_url(source)}")' if source.is_file() else match[0]
 
-    return re.sub(r"url\(([^)]+)\)", rewrite, text)
+    text = re.sub(r"@import\s+(?:url\(\s*([^)]+)\)|([\"'][^\"']+[\"']))\s*([^;]*);", imported, text)
+    return re.sub(r"url\(([^)]+)\)", resource, text)
 
 
 def context(build, page, document, template):
@@ -155,7 +151,8 @@ def context(build, page, document, template):
                 else Path(path.name)
             )
             label = "style-" + "-".join(relative.with_suffix("").parts)
-        sheet(css_file(build, path, directory), label, field, str(path))
+        css = embed_css(build, path) if options.assets == "standalone" else path.read_text()
+        sheet(css, label, field, str(path))
 
     for name in dict.fromkeys([*values(css_paths), *values(page.data.get("css"))]):
         authored(name, "css")
@@ -163,7 +160,7 @@ def context(build, page, document, template):
         for feature in ("code", "math", "toc", "image", "warning"):
             if feature in document.features:
                 path = PACKAGE / "assets" / f"feature-{feature}.css"
-                sheet(css_file(build, path, directory), feature)
+                sheet(path.read_text(), feature)
         if "code" in document.features:
             sheet(build.highlighter.css, "highlight")
     for name in dict.fromkeys([*options.stylesheets, *values(page.data.get("stylesheets"))]):
