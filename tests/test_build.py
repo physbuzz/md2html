@@ -362,6 +362,33 @@ def test_jekyll_and_markdown_modes(cli, put, tmp_path):
     assert "# {{site.title}}" in text and "Included" in text
 
 
+def test_config_discovery_uses_only_working_directory(cli, put, tmp_path):
+    put("md2html.json", "invalid parent configuration")
+    put("child/page.md", "# {{ site.title }}")
+    directory = tmp_path / "child"
+    cli("page.md", "--math", "raw", cwd=directory)
+    assert soup(directory / "page.html").select_one("h1").text == "child"
+
+    put("child/md2html.json", json.dumps({"input": "page.md", "math": "raw", "site": {"title": "LOCAL"}}))
+    cli(cwd=directory)
+    assert soup(directory / "page.html").select_one("h1").text == "LOCAL"
+
+    put(
+        "md2html.json",
+        json.dumps(
+            {
+                "input": "child/page.md",
+                "output": "explicit/page.html",
+                "math": "raw",
+                "site": {"title": "EXPLICIT"},
+            }
+        ),
+    )
+    cli("--config", "../md2html.json", cwd=directory)
+    assert soup(tmp_path / "explicit/page.html").select_one("h1").text == "EXPLICIT"
+    cli("--config", "missing.json", cwd=directory, ok=False)
+
+
 def test_config_precedence_paths_and_templates(cli, put, tmp_path):
     put("project/a.md", "# {{page.title}}\n\n```py\nprint(1)\n```")
     put(

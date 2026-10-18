@@ -172,7 +172,12 @@ def watch(build):
                 partial(SimpleHTTPRequestHandler, directory=str(build.output_root)),
             )
             threading.Thread(target=server.serve_forever, daemon=True).start()
-            print(f"Serving http://{build.options.host}:{server.server_port}/", flush=True)
+            path = (
+                build.url(build.entrypoint, build.output_root)
+                if build.entrypoint != build.output_root
+                else ""
+            )
+            print(f"Serving http://{build.options.host}:{server.server_port}/{path}", flush=True)
         while True:
             if events.changed.wait(0.3):
                 time.sleep(0.1)
@@ -227,8 +232,6 @@ def main(argv=None):
         if not args["input"]:
             args["input"] = None
         options = resolve(args)
-        if options.serve and options.output is None:
-            options.output = options.root / ".md2html-preview"
         build = Build(options)
         try:
             report(build)

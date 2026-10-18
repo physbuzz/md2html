@@ -1,3 +1,5 @@
+import json
+import re
 import socket
 import subprocess
 import sys
@@ -40,6 +42,58 @@ def free_port():
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
+
+
+@pytest.mark.parametrize(
+    "destination,target",
+    [
+        ("default", "notes/my note.html"),
+        ("file", "html/custom page.html"),
+        ("directory", "html/nested/published/index.html"),
+        ("config", "configured/custom page.html"),
+    ],
+)
+def test_single_file_serve_uses_build_destination(put, tmp_path, destination, target):
+    put("notes/my note.md", "---\npermalink: /nested/published/\n---\n@include(part.md)\n@src(counter.py)")
+    put("notes/part.md", "FIRST")
+    put(
+        "notes/counter.py",
+        'from pathlib import Path\np = Path("counter")\n'
+        'p.write_text(str(int(p.read_text()) + 1) if p.exists() else "1")\nprint("RESULT")\n',
+    )
+    output_args = ()
+    if destination == "config":
+        put("md2html.json", json.dumps({"output": target}))
+    elif destination != "default":
+        output_args = ("-o", "html" if destination == "directory" else target)
+    with watching(tmp_path, "-es", "notes/my note.md", "--math", "raw", "--port", 0, *output_args):
+        log = tmp_path / ".watch.log"
+        until(lambda: "Serving http" in log.read_text())
+        url = re.search(r"Serving (http://\S+)", log.read_text())[1]
+        assert url.endswith(
+            "/nested/published/index.html"
+            if destination == "directory"
+            else "/my%20note.html"
+            if destination == "default"
+            else "/custom%20page.html"
+        )
+
+        def page():
+            with urlopen(url, timeout=1) as response:
+                return response.read().decode()
+
+        assert "FIRST" in page() and "RESULT" in page()
+        assert (tmp_path / target).is_file()
+        assert not list(tmp_path.rglob(".md2html-preview"))
+        put("notes/part.md", "SECOND")
+        until(lambda: "SECOND" in page())
+        assert (tmp_path / "notes/counter").read_text() == "1"
+        time.sleep(0.5)
+        builds = log.read_text().count("Built ")
+        with (tmp_path / target).open("a") as output:
+            output.write("<!-- output edit -->")
+        time.sleep(0.7)
+        assert log.read_text().count("Built ") == builds
 
 
 @pytest.mark.parametrize("directory", [False, True])

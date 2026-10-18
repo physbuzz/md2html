@@ -66,11 +66,8 @@ class Options:
 def resolve(cli):
     cli = dict(cli)
     config = cli.pop("config", None)
-    if config is None:
-        config = next(
-            (p / "md2html.json" for p in (Path.cwd(), *Path.cwd().parents) if (p / "md2html.json").is_file()),
-            None,
-        )
+    if config is None and Path("md2html.json").is_file():
+        config = Path("md2html.json")
     raw = {}
     root = Path.cwd()
     if config:

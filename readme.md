@@ -40,7 +40,7 @@ md2html --update # or -U; update the packaged executable and exit
 Renderer dependencies:
 - **Pygments syntax highlighting** (default): installed with md2html, including `pygments-mathematica` for Wolfram Language.
 - **Rouge syntax highlighting** (optional, `--highlighter rouge`): install Ruby, then `gem install --user-install rouge`.
-- **MathJax**: `make install` bundles its npm packages. Static CommonHTML also requires Node.js. For a Python-package installation, run `npm install mathjax@4.1.3 @mathjax/mathjax-tex-font@4.1.3 @mathjax/mathjax-newcm-font@4.1.3` in the notes project or a parent directory.
+- **MathJax**: `make install` bundles its npm packages. Static CommonHTML also requires Node.js. For a Python-package installation, run `npm install mathjax@4.1.3 @mathjax/mathjax-tex-font@4.1.3 @mathjax/mathjax-newcm-font@4.1.3` in your project directory or a parent directory.
 
 SVG, MathML, raw LaTeX, and CDN browser MathJax do not need the npm MathJax
 packages. SVG and MathML use Python dependencies installed with md2html.

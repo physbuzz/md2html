@@ -513,6 +513,7 @@ class Build:
         self.written.clear()
         self.dependencies.clear()
         pages, static = self.discover()
+        self.entrypoint = pages[0].target if self.single and pages else self.output_root
         # Validate the complete output plan before removing or writing anything.
         if self.options.clean and self.options.site_mode and self.output_root.exists():
             if any(source.is_relative_to(self.output_root) for source in self.options.input):
