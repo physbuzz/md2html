@@ -92,3 +92,29 @@ def test_watch_site_listings_rebuild_with_raw_math(put, tmp_path):
         until(lambda: target.exists() and "FIRST" in target.read_text())
         put("notes/_posts/2025-01-01-post.md", "---\ntitle: SECOND\n---\npost")
         until(lambda: "SECOND" in target.read_text())
+
+
+def test_watch_pagination_moves_deletes_and_static_assets(cli, put, tmp_path):
+    import json
+
+    put("site/blog/index.html", "{% for p in paginator.posts %}{{p.title}};{% endfor %}")
+    put("site/unrelated.md", "Independent")
+    put("site/_posts/2026-01-01-one.md", "---\ntitle: ONE\n---\nPost")
+    put("md2html.json", json.dumps({"site": {"paginate": 1, "paginate_path": "/blog/page:num/"}}))
+    args = ("site", "-o", "html", "--output-mode", "site", "--math", "raw")
+    cli(*args)
+    independent = tmp_path / "html/unrelated.html"
+    before = independent.stat().st_mtime_ns
+    with watching(tmp_path, *args, "-w"):
+        index = tmp_path / "html/blog/index.html"
+        second = tmp_path / "html/blog/page2/index.html"
+        until(lambda: "Built 0 files" in (tmp_path / "watch.log").read_text())
+        put("site/_posts/2026-01-02-two.md", "---\ntitle: TWO\n---\nPost")
+        until(lambda: "TWO" in index.read_text() and "ONE" in second.read_text())
+        (tmp_path / "site/_posts/2026-01-01-one.md").rename(tmp_path / "site/_posts/2026-01-03-one.md")
+        until(lambda: "ONE" in index.read_text() and "TWO" in second.read_text())
+        (tmp_path / "site/_posts/2026-01-03-one.md").unlink()
+        until(lambda: "TWO" in index.read_text() and not second.exists())
+        put("site/img/share.gif", "UNREFERENCED")
+        until(lambda: (tmp_path / "html/img/share.gif").read_text() == "UNREFERENCED")
+        assert independent.stat().st_mtime_ns == before

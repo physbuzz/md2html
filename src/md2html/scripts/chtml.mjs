@@ -9,15 +9,17 @@ try {
   await MathJax.init({
     loader: {load: ['input/tex', 'output/chtml', '[mathjax-tex]/chtml'],
              paths: {'mathjax-tex': '@mathjax/mathjax-tex-font'}},
-    chtml: {fontURL: 'mathjax/woff2', linebreaks: {inline: false}, scale: 1.195}
+    chtml: {adaptiveCSS: process.argv[3] !== 'shared', fontURL: 'mathjax/woff2', linebreaks: {inline: false}, scale: 1.195}
   });
   const adaptor = MathJax.startup.adaptor;
+  const base = process.argv[3] === 'shared' ? adaptor.innerHTML(MathJax.chtmlStylesheet()) : '';
   console.log(JSON.stringify({ready: true}));
   for await (const line of readline.createInterface({input: process.stdin})) {
     try {
       const {tex, display, stylesheet} = JSON.parse(line);
       if (stylesheet) {
-        console.log(JSON.stringify({css: adaptor.outerHTML(MathJax.chtmlStylesheet())}));
+        const css = adaptor.innerHTML(MathJax.chtmlStylesheet());
+        console.log(JSON.stringify({base, css: css.slice(base.length)}));
         continue;
       }
       const node = MathJax.tex2chtml(tex, {display});

@@ -13,11 +13,12 @@ from urllib.parse import quote, unquote, urlsplit
 from xml.etree import ElementTree as ET
 
 import yaml
-from liquid import Environment, FileSystemLoader
+from liquid import Environment
 
 from . import assets
 from .config import DOCUMENTS, MARKDOWN, PACKAGE, values
 from .highlight import Highlighter
+from .incremental import State, Templates
 from .math import Math
 from .render import Document, frontmatter, liquid_render, slugify
 
@@ -54,6 +55,9 @@ class Build:
             else options.output or self.source_root / "html"
         ).resolve()
         self.dependencies = set()
+        self.products = set()
+        self.collections = set()
+        self.collection_keys = {"posts", "pages", "tags", "categories", "tag_list", "category_list"}
         self.warnings = []
         self.owners = {}
         self.copied = set()
@@ -72,7 +76,8 @@ class Build:
             self.source_root / "_layouts",
             PACKAGE / "default_templates",
         ]
-        self.liquid = Environment(loader=FileSystemLoader(self.template_dirs), autoescape=False)
+        self.liquid = Environment(loader=Templates(self), autoescape=False)
+        self.liquid.build = self
         self.liquid.context_depth_limit = 30
         self.liquid.add_filter("relative_url", self.relative_url)
         self.liquid.add_filter(
@@ -94,7 +99,7 @@ class Build:
 
     def css_url(self, url, page):
         path = (page.target.parent / unquote(url)).resolve()
-        return quote(os.path.relpath(path, self.output_root / "assets/md2html"), safe="/:@")
+        return quote(os.path.relpath(path, self.output_root / "assets"), safe="/:@")
 
     def claim(self, target, owner):
         target = target.resolve()
@@ -102,35 +107,54 @@ class Build:
             raise ValueError(f"output escapes destination: {target}")
         previous = self.owners.setdefault(target, owner)
         if previous != owner:
-            raise ValueError(f"output collision at {target}: {previous} and {owner}")
+            self.warnings.append(f"output collision at {target}: {previous} and {owner}; skipping {owner}")
+            return None
         return target
 
     def write(self, target, text, owner):
         target = self.claim(target, owner)
+        if target is None:
+            return
         if target in self.source_files:
-            raise ValueError(f"output would overwrite source: {target}")
+            self.warnings.append(f"output would overwrite source: {target}; skipping")
+            return
+        self.products.add(target)
+        data = text.encode("utf-8")
+        if target.is_file() and target.read_bytes() == data:
+            return
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_name("." + target.name + ".md2html-tmp")
-        temporary.write_text(text, encoding="utf-8")
+        temporary.write_bytes(data)
         temporary.replace(target)
         self.written.append(target)
 
     def copy(self, source, target):
         source, target = source.resolve(), target.resolve()
-        self.claim(target, str(source))
+        if self.claim(target, str(source)) is None:
+            return
+        self.products.add(target)
         if source == target or target in self.copied:
             return
         if target in self.source_files:
-            raise ValueError(f"output would overwrite source: {target}")
+            self.warnings.append(f"output would overwrite source: {target}; skipping")
+            return
+        if (
+            target.is_file()
+            and source.stat().st_mtime_ns == target.stat().st_mtime_ns
+            and source.stat().st_size == target.stat().st_size
+        ):
+            return
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
         self.copied.add(target)
 
-    def asset_link(self, source, page):
+    def asset_link(self, source, page, *, media=False):
         source = source.resolve()
         self.dependencies.add(source)
         if not source.is_file():
             return self.url(source, page)
+        if self.options.assets == "standalone" and (not media or self.options.images.get("embed", True)):
+            return assets.data_url(source)
         if self.output_root == self.source_root and self.output_file:
             return self.url(source, page)
         if source.is_relative_to(self.source_root):
@@ -146,16 +170,23 @@ class Build:
         relative = path.relative_to(root)
         if not self.output_file and path.is_relative_to(self.output_root):
             return True
-        if any(part.startswith(".") for part in relative.parts):
+
+        def matches(patterns):
+            return any(
+                relative.as_posix() == pattern.strip("/")
+                or relative.as_posix().startswith(pattern.strip("/") + "/")
+                or relative.match(pattern.strip("/"))
+                for pattern in patterns
+            )
+
+        if matches([*self.options.exclude, *values(self.site_config.get("exclude"))]):
             return True
-        if any(part.startswith("_") and part != "_posts" for part in relative.parts):
-            return True
-        patterns = [*self.options.exclude, *values(self.site_config.get("exclude"))]
+        if self.options.output_mode == "jekyll" and matches(values(self.site_config.get("include"))):
+            return False
+        private = {"md2html.json", "Gemfile", "Gemfile.lock", "node_modules", "vendor", "venv"}
         return any(
-            relative.as_posix() == pattern.strip("/")
-            or relative.as_posix().startswith(pattern.strip("/") + "/")
-            or relative.match(pattern.strip("/"))
-            for pattern in patterns
+            part in private or part.startswith(".") or part.startswith("_") and part != "_posts"
+            for part in relative.parts
         )
 
     def discover(self):
@@ -255,10 +286,14 @@ class Build:
                         ".md" if self.options.markdown_mode else ".html"
                     )
                 if target.resolve() == path:
-                    raise ValueError(f"source and output are the same file: {path}")
+                    self.warnings.append(f"source and output are the same file: {path}; skipping")
+                    continue
                 data["url"] = "/" + url.lstrip("/")
+                if post:
+                    data.setdefault("id", data["url"].rstrip("/") or "/")
                 pages.append(Page(path, relative, target, body, data, metadata))
         self.site = self.site_config | {"time": datetime.now(timezone.utc), "pages": [p.data for p in pages]}
+        self.site.setdefault("title", self.source_root.name)
         posts = sorted(
             (p.data for p in pages if "_posts" in p.relative.parts), key=lambda p: p["date"], reverse=True
         )
@@ -277,11 +312,14 @@ class Build:
             ]
         per_page = int(self.site.get("paginate") or 0)
         if self.options.site_mode and per_page:
-            index = next((p for p in pages if p.relative == Path("index.html")), None)
             pattern = str(self.site.get("paginate_path", "/page:num/"))
+            prefix = pattern.split(":num")[0]
+            indexes = [p for p in pages if p.relative.stem == "index" and prefix.startswith(p.data["url"])]
+            index = max(indexes, key=lambda p: len(p.data["url"]), default=None)
+            posts = [post for post in posts if not post.get("hidden", False)]
             if not index or ":num" not in pattern or per_page < 1:
                 raise ValueError(
-                    "pagination requires index.html, positive paginate, and :num in paginate_path"
+                    "pagination requires an index page above paginate_path, positive paginate, and :num in paginate_path"
                 )
             total = max(1, math.ceil(len(posts) / per_page))
             urls = [
@@ -309,51 +347,56 @@ class Build:
                         paginator=paginator,
                     )
                 )
-        for page in pages:
-            self.claim(page.target, str(page.source))
-        for source, target in static:
-            self.claim(target, str(source))
+        pages = [page for page in pages if self.claim(page.target, str(page.source)) is not None]
+        static = [
+            (source, target) for source, target in static if self.claim(target, str(source)) is not None
+        ]
         return pages, static
 
-    def template(self, name, layout=False):
-        paths = (
-            [self.source_root / "_layouts", *self.options.templates]
-            if layout
-            else [*self.options.templates, self.options.root / "_templates", PACKAGE / "default_templates"]
+    def lookup(self, name, page=None, *, layout=False, template=False):
+        directories = (
+            self.template_dirs
+            if template or layout
+            else [
+                self.options.root,
+                *([page.source.parent] if page else []),
+                *self.template_dirs,
+                PACKAGE / "assets",
+            ]
         )
-        for directory in paths:
-            for filename in (name, name + ".html") if layout else (name,):
-                path = directory / filename
+        for directory in directories:
+            for filename in (name, str(name) + ".html") if layout else (name,):
+                path = (directory / filename).resolve()
                 self.dependencies.add(path)
                 if path.is_file():
                     return path
-        raise ValueError(f"template not found: {name}")
+        raise FileNotFoundError(f"file not found: {name}")
 
     def relocate(self, text, page):
-        def tag(match):
-            def attribute(item):
-                name = html.unescape(item[3])
-                parsed = urlsplit(name)
-                if parsed.scheme or parsed.netloc or not parsed.path:
-                    return item[0]
-                # Generated links already resolve to a planned output file.
-                if (page.target.parent / unquote(parsed.path)).resolve() in self.owners:
-                    return item[0]
-                source = (page.source.parent / unquote(parsed.path)).resolve()
-                if parsed.path.startswith("/") and not source.is_file():
-                    source = self.source_root / unquote(parsed.path).lstrip("/")
-                self.dependencies.add(source)
-                if not source.is_file() or source.suffix.lower() in DOCUMENTS:
-                    return item[0]
-                url = self.asset_link(source, page)
-                url += ("?" + parsed.query if parsed.query else "") + (
-                    "#" + parsed.fragment if parsed.fragment else ""
-                )
-                return item[1] + item[2] + html.escape(url, quote=True) + item[2]
+        def resolve(name):
+            parsed = urlsplit(name)
+            if parsed.scheme or parsed.netloc or not parsed.path:
+                return name
+            # Generated links already resolve to a planned output file.
+            if (
+                self.options.assets != "standalone"
+                and (page.target.parent / unquote(parsed.path)).resolve() in self.owners
+            ):
+                return name
+            source = (page.source.parent / unquote(parsed.path)).resolve()
+            if parsed.path.startswith("/") and not source.is_file():
+                source = self.source_root / unquote(parsed.path).lstrip("/")
+            self.dependencies.add(source)
+            if not source.is_file() or source.suffix.lower() in DOCUMENTS:
+                return name
+            url = self.asset_link(source, page, media=True)
+            return (
+                url
+                + ("?" + parsed.query if parsed.query else "")
+                + ("#" + parsed.fragment if parsed.fragment else "")
+            )
 
-            return re.sub(r'((?:src|href)\s*=\s*)(["\'])(.*?)\2', attribute, match[0], flags=re.I)
-
-        return re.sub(r"<[a-zA-Z][^>]*>", tag, text)
+        return assets.relocate(text, resolve)
 
     def render_page(self, page):
         document = Document(self, page)
@@ -376,18 +419,26 @@ class Build:
         layout = page.data.get("layout")
         if page.source.suffix.lower() not in MARKDOWN and not layout:
             return self.relocate(body, page)
-        template = (
-            self.template(str(page.data.get("template", self.options.template)))
-            if page.source.suffix.lower() in MARKDOWN and not layout
-            else None
-        )
+        template = None
+        if page.source.suffix.lower() in MARKDOWN and not layout:
+            try:
+                template = self.lookup(
+                    str(page.data.get("template", self.options.template)), page, template=True
+                )
+            except FileNotFoundError as error:
+                document.warn(str(error))
         context["md2html"] = assets.context(self, page, document, template)
         body = self.relocate(body, page)
         seen = set()
         while layout and layout != "none":
-            path = self.template(str(layout), True)
+            try:
+                path = self.lookup(str(layout), page, layout=True)
+            except FileNotFoundError as error:
+                document.warn(str(error))
+                break
             if path in seen:
-                raise ValueError(f"layout cycle: {path}")
+                document.warn(f"layout cycle: {path}")
+                break
             seen.add(path)
             metadata, text = frontmatter(path.read_text())
             body = liquid_render(
@@ -423,15 +474,34 @@ class Build:
             return str(self.site.get("url", "")).rstrip("/") + self.relative_url(url)
 
         field(root, "title", self.site.get("title", self.source_root.name))
-        field(root, "id", absolute("/"))
-        field(root, "updated", datetime.now(timezone.utc).isoformat())
-        for post in self.site["posts"]:
+        posts = self.site["posts"][:20]
+
+        def timestamp(value):
+            date = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return (date if date.tzinfo else date.replace(tzinfo=timezone.utc)).isoformat()
+
+        field(root, "id", absolute("/feed.xml"))
+        ET.SubElement(root, "{" + namespace + "}link", rel="self", href=absolute("/feed.xml"))
+        field(
+            root,
+            "updated",
+            timestamp(posts[0]["date"])
+            if posts
+            else timestamp(max((p["date"] for p in self.site["pages"]), default="1970-01-01")),
+        )
+        author = self.site.get("author") or self.site["title"]
+        author = author if isinstance(author, dict) else {"name": author}
+        node = ET.SubElement(root, "{" + namespace + "}author")
+        field(node, "name", author.get("name") or self.site["title"])
+        for key, value in dict(email=author.get("email"), uri=author.get("uri") or author.get("url")).items():
+            if value:
+                field(node, key, value)
+        for post in posts:
             entry = ET.SubElement(root, "{" + namespace + "}entry")
             for key, value in dict(
                 title=post["title"],
                 id=absolute(post["url"]),
-                updated=datetime.fromisoformat(post["date"]).replace(tzinfo=timezone.utc).isoformat(),
-                summary=post["excerpt"],
+                updated=timestamp(post["date"]),
             ).items():
                 field(entry, key, value)
             ET.SubElement(entry, "{" + namespace + "}link", href=absolute(post["url"]))
@@ -449,12 +519,23 @@ class Build:
             if any(source.is_relative_to(self.output_root) for source in self.options.input):
                 raise ValueError("clean output must not contain input")
             shutil.rmtree(self.output_root)
+        state = State(self)
+        watched = set(self.dependencies)
         for page in pages:
-            self.dependencies.add(page.source)
-            self.write(page.target, self.render_page(page), str(page.source))
+            self.dependencies = {page.source}
+            self.products.clear()
+            self.collections = {"posts"} if page.paginator else set()
+            if not state.current(page):
+                # Only dependencies observed for this render belong to the new output.
+                self.dependencies = {page.source}
+                self.write(page.target, self.render_page(page), str(page.source))
+                state.remember(page)
+            watched.update(self.dependencies)
+        self.dependencies = watched
         for source, target in static:
             self.copy(source, target)
         feed = self.output_root / "feed.xml"
         if self.options.site_mode and feed not in self.owners:
             self.write(feed, self.feed(), "generated feed")
+        state.save()
         return self.written

@@ -86,7 +86,7 @@ class Math:
         self.cache = {}
 
     def stylesheet(self):
-        return re.sub(r"^<style[^>]*>|</style>$", "", self.worker.request(stylesheet=True)["css"])
+        return self.worker.request(stylesheet=True)
 
     def close(self):
         if self.worker:
@@ -96,7 +96,7 @@ class Math:
         backend = self.options.math
         document.features.add("math")
         delimiter = "$$" if display else "$"
-        raw = delimiter + tex + delimiter
+        raw = tex if tex.startswith(r"\begin{") else delimiter + tex + delimiter
         if backend in {"raw", "mathjax"}:
             markup = html.escape(raw)
         else:
@@ -110,6 +110,7 @@ class Math:
                                     "node",
                                     str(PACKAGE / "scripts/chtml.mjs"),
                                     str(npm_root(document.build.source_root, self.options.root)),
+                                    self.options.assets,
                                 ]
                             )
                         result = self.worker.request(tex=tex, display=display)

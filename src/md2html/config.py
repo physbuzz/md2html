@@ -25,6 +25,7 @@ class Options:
     root: Path = field(default_factory=Path.cwd)
     output_mode: str = "pages"
     recursive: bool = False
+    verbose: bool = False
     execute: bool = False
     force: bool = False
     force_execution: bool = False
@@ -121,7 +122,9 @@ def resolve(cli):
     if options.output_mode != "pages":
         options.recursive = True
     if options.assets == "auto":
-        options.assets = "standalone" if len(options.input) == 1 and options.input[0].is_file() else "shared"
+        options.assets = "shared" if options.site_mode or options.markdown_mode else "standalone"
+    if options.site_mode and options.assets == "standalone":
+        options.assets = "shared"
     for name, choices in (
         ("output_mode", MODES),
         ("math", BACKENDS),
@@ -135,6 +138,7 @@ def resolve(cli):
         raise ValueError("--force-execution requires --execute")
     for name in (
         "recursive",
+        "verbose",
         "execute",
         "force",
         "force_execution",

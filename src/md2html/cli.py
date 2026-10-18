@@ -1,4 +1,4 @@
-"""Command-line entry point and full-project watch loop."""
+"""Command-line entry point and dependency-aware watch loop."""
 
 import argparse
 import json
@@ -39,9 +39,10 @@ def parser():
     result.add_argument("-o", "--output")
     result.add_argument("--config")
     for short, name, help_text in (
+        ("v", "verbose", "report additional build diagnostics"),
         ("e", "execute", "execute snippets (successful output is cached)"),
         ("r", "recursive", "include nested source directories"),
-        ("f", "force", "rebuild HTML (every build renders all pages)"),
+        ("f", "force", "render every page even when its inputs are unchanged"),
         ("F", "force-execution", "rerun cached snippets; requires --execute"),
         ("s", "serve", "serve output and watch for changes"),
         ("w", "watch", "watch for changes without starting a server"),
@@ -99,7 +100,7 @@ class Changes(FileSystemEventHandler):
             if not name:
                 continue
             path = Path(name).resolve()
-            if any(part.startswith(".") for part in path.parts):
+            if any(part.startswith(".") for part in path.parts) and path not in self.build.dependencies:
                 continue
             if path in self.build.owners or (
                 not self.build.output_file and path.is_relative_to(self.build.output_root)
@@ -173,6 +174,8 @@ def main(argv=None):
                 if destination == "-":
                     print(text, end="")
                 else:
+                    if Path(destination).exists() and not args.get("force"):
+                        raise ValueError(f"file exists: {destination}; use --force to overwrite")
                     Path(destination).write_text(text)
                 return 0
         if args.pop("no_css"):

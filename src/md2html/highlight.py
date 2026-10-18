@@ -6,7 +6,7 @@ from mathematica import MathematicaLexer
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
 from pygments.lexer import inherit
-from pygments.lexers import TextLexer, get_lexer_by_name
+from pygments.lexers import TextLexer, get_lexer_by_name, get_lexer_for_filename
 from pygments.token import String
 from pygments.util import ClassNotFound
 
@@ -66,14 +66,24 @@ class Highlighter:
             )
         return css
 
-    def code(self, value, language="", fenced=False):
+    def code(self, value, language="", fenced=False, filename=None):
         language = ALIASES.get(language.lower(), language.lower())
+        if filename:
+            try:
+                get_lexer_by_name(language)
+            except ClassNotFound:
+                try:
+                    language = get_lexer_for_filename(str(filename)).aliases[0]
+                except ClassNotFound:
+                    pass
         if self.worker:
             tokens = self.worker.request(code=value, language=language)["value"]
         else:
             if language not in self.lexers:
                 try:
-                    lexer = WolframLexer() if language in WolframLexer.aliases else get_lexer_by_name(language)
+                    lexer = (
+                        WolframLexer() if language in WolframLexer.aliases else get_lexer_by_name(language)
+                    )
                 except ClassNotFound:
                     lexer = TextLexer()
                 self.lexers[language] = lexer

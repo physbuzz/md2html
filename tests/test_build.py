@@ -122,10 +122,15 @@ def test_execution_warning_stays_with_collapsed_snippet(cli, put, tmp_path, mode
         "@src(missing.wl, collapsed)\n\n"
         "@src-begin(python)\nprint('successful output')\n@src-end\n\n# After snippets\n",
     )
-    put("md2html.json", json.dumps({
-        "commands": {"wl": "md2html-test-missing-wolframscript"},
-        "execute": True,
-    }))
+    put(
+        "md2html.json",
+        json.dumps(
+            {
+                "commands": {"wl": "md2html-test-missing-wolframscript"},
+                "execute": True,
+            }
+        ),
+    )
     result = cli("page.md", "--output-mode", mode, "-o", "rendered")
     assert "md2html-test-missing-wolframscript" in result.stderr
     output = tmp_path / "rendered" / ("page.md" if mode == "jekyll-markdown" else "page.html")
@@ -219,7 +224,7 @@ def test_font_delivery(cli, put, tmp_path, assets, fonts):
 def test_multiple_inputs_keep_shared_math(cli, put, tmp_path, backend):
     put("a.md", "$x$")
     put("b.md", "# No math")
-    cli("a.md", "b.md", "-o", "public", "--math", backend)
+    cli("a.md", "b.md", "-o", "public", "--math", backend, "--assets", "shared")
     doc = soup(tmp_path / "public/a.html")
     for tag in doc.select("link[href],script[src]"):
         url = tag.get("href", tag.get("src"))
@@ -235,10 +240,16 @@ def test_rebuild_restores_shared_math_assets(put, tmp_path, backend):
     put("notes/a.md", "$x^2$")
     put("notes/nested/b.md", "$x^2$ and $\\frac{1}{2}$")
     output = tmp_path / "public"
-    build = Build(Options(
-        input=[tmp_path / "notes"], output=output, root=tmp_path,
-        recursive=True, assets="shared", math=backend,
-    ))
+    build = Build(
+        Options(
+            input=[tmp_path / "notes"],
+            output=output,
+            root=tmp_path,
+            recursive=True,
+            assets="shared",
+            math=backend,
+        )
+    )
     try:
         build.build()
         shutil.rmtree(output)
@@ -261,7 +272,7 @@ def test_rebuild_restores_shared_math_assets(put, tmp_path, backend):
         )
         assert "mjx-msqrt" in css
     else:
-        assert list((output / "assets/md2html/mathjax-newcm-font").rglob("*.woff2"))
+        assert list((output / "assets/mathjax-newcm-font").rglob("*.woff2"))
 
 
 def test_highlighting_blocks_have_independent_lexer_state(cli, put, tmp_path):
@@ -382,7 +393,7 @@ def test_moved_page_assets_and_image_options(cli, put, tmp_path):
         "a.md", "![[images/a.svg|width=70%|class=extra|alt=Picture]]\n\n![ordinary](images/a.svg)\n@src(x.py)"
     )
     put("md2html.json", json.dumps({"images": {"class": "centered", "width": "40%"}}))
-    cli("a.md", "-o", "public/a.html")
+    cli("a.md", "-o", "public/a.html", "--assets", "shared")
     doc = soup(tmp_path / "public/a.html")
     for tag in doc.select("img[src],.code-header a[href]"):
         assert (tmp_path / "public" / tag.get("src", tag.get("href"))).is_file()
@@ -399,8 +410,8 @@ def test_output_escape_rejected(cli, put, permalink):
 def test_collisions_and_clean_safety(cli, put, tmp_path):
     put("notes/a.md", "---\npermalink: /same.html\n---\na")
     put("notes/b.md", "---\npermalink: /same.html\n---\nb")
-    cli("notes", "-o", "public", ok=False)
-    assert not (tmp_path / "public").exists()
+    assert "output collision" in cli("notes", "-o", "public").stderr
+    assert (tmp_path / "public/same.html").exists()
     cli("notes", "-o", ".", "--output-mode", "site", "--clean", ok=False)
     assert (tmp_path / "notes/a.md").is_file()
 
@@ -420,7 +431,7 @@ def test_nested_asset_paths_and_frontmatter_styles(cli, put, tmp_path):
     put("notes/page.md", "---\nstylesheets: [../style/base.css]\ncss: []\n---\nHello")
     cli("notes/page.md", "-o", "public/deep/page.html")
     text = (tmp_path / "public/deep/page.html").read_text()
-    assert "color: teal" in text and "data:image/svg+xml;base64," in text
+    assert "color:teal" in text and "data:image/svg+xml;base64," in text
 
 
 def test_permalinks_local_assets_and_toc_duplicates(cli, put, tmp_path):
@@ -429,7 +440,7 @@ def test_permalinks_local_assets_and_toc_duplicates(cli, put, tmp_path):
         "notes/page.md",
         "---\npermalink: /deep/article/\n---\n@toc\n# Heading\n# Heading\n![Picture](picture.svg)",
     )
-    cli("notes", "-o", "public", "--math", "raw")
+    cli("notes", "-o", "public", "--math", "raw", "--assets", "shared")
     doc = soup(tmp_path / "public/deep/article/index.html")
     assert doc.select_one('a[href="#heading-2"]')
     image = doc.select_one("img")
@@ -512,8 +523,7 @@ def test_included_markdown_assets_follow_the_fragment(cli, put, tmp_path):
     put("a.md", "@include(parts/fragment.md)")
     cli("a.md", "-o", "public/a.html")
     image = soup(tmp_path / "public/a.html").select_one("img")
-    assert not image["src"].startswith("/")
-    assert (tmp_path / "public" / image["src"]).read_text() == "<svg/>"
+    assert image["src"] == "data:image/svg+xml;base64,PHN2Zy8+"
 
 
 def test_shared_authored_stylesheets_copy_imports_and_resources(cli, put, tmp_path):
@@ -536,7 +546,7 @@ def test_shared_authored_stylesheets_copy_imports_and_resources(cli, put, tmp_pa
     target = tmp_path / "public/nested/a.html"
     doc = soup(target)
     sheet = target.parent / doc.select('link[rel="stylesheet"]')[-1]["href"]
-    assert "color: teal" in sheet.read_text()
+    assert "color:teal" in sheet.read_text()
     import re
 
     for url in re.findall(r'url\("([^"]+)"\)', sheet.read_text()):
@@ -694,7 +704,7 @@ def test_mixed_language_highlighting_and_custom_palettes(cli, put, tmp_path):
     assert '.codehilite:not([data-language="wl"]) .kt { color: #B00040' in doc.style.text
     cli("a.md", "--math", "raw", "--highlighter-style", "monokai", "--highlighter-dark-style", "monokai")
     css = soup(tmp_path / "a.html").style.text
-    assert '.codehilite .nb{color:#a6e22e' in css.lower()
+    assert ".codehilite .nb{color:#a6e22e" in css.lower()
 
 
 @pytest.mark.parametrize("missing", ["ruby", "gem"])

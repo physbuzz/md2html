@@ -1,10 +1,12 @@
 """Page-specific asset references with one output owner for the whole build."""
 
 import base64
-import hashlib
+import html
 import json
 import mimetypes
 import re
+from html.parser import HTMLParser
+from itertools import accumulate
 from pathlib import Path
 
 import rcssmin
@@ -16,6 +18,44 @@ from .math import CDN, VERSION, npm_root
 def data_url(path):
     mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
     return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode()
+
+
+def relocate(text, resolve):
+    """Rewrite asset attributes without reserializing HTML or touching comments/scripts."""
+    changes = []
+    offsets = [0, *accumulate(len(line) for line in text.splitlines(keepends=True))]
+
+    class Links(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            original = self.get_starttag_text()
+
+            def attribute(match):
+                name, value = match[1].lower(), html.unescape(match[3] if match[2] else match[4])
+                if name == "srcset" and "data:" not in value:
+                    candidates = [candidate.strip().split(maxsplit=1) for candidate in value.split(",")]
+                    value = ", ".join(
+                        " ".join([resolve(parts[0]), *parts[1:]]) for parts in candidates if parts
+                    )
+                elif name != "srcset":
+                    value = resolve(value)
+                return match[1] + '="' + html.escape(value, quote=True) + '"'
+
+            rewritten = re.sub(
+                r"(?<![\w:-])(src|href|poster|data|srcset)\s*=\s*(?:([\"'])(.*?)\2|([^\s>]+))",
+                attribute,
+                original,
+                flags=re.I | re.S,
+            )
+            line, column = self.getpos()
+            changes.append((offsets[line - 1] + column, original, rewritten))
+
+    Links(convert_charrefs=False).feed(text)
+    result, position = [], 0
+    for offset, original, rewritten in changes:
+        result.extend([text[position:offset], rewritten])
+        position = offset + len(original)
+    result.append(text[position:])
+    return "".join(result)
 
 
 def css_file(build, path, page, stack=()):
@@ -76,9 +116,11 @@ def context(build, page, document, template):
             for backend in ("mathjax-chtml", "mathjax", "svg", "mathml", "raw")
         }
     )
-    css_paths = page.data.get("css", options.css)
+    css_paths = options.css
     if css_paths is None:
         companion = template.with_suffix(".css") if template else None
+        if companion:
+            build.dependencies.add(companion)
         css_paths = (
             [companion]
             if companion and companion.exists()
@@ -88,40 +130,52 @@ def context(build, page, document, template):
                 / ("barebones.css" if template and template.name == "barebones.html" else "page-base.css")
             ]
         )
-    css = []
-    for name in values(css_paths):
-        path = Path(name)
-        if not path.is_absolute():
-            path = page.source.parent / path
-        css.append(css_file(build, path, page))
-    if options.feature_css:
-        css.extend(
-            (PACKAGE / "assets" / f"feature-{feature}.css").read_text()
-            for feature in ("code", "math", "toc", "image", "warning")
-            if feature in document.features
-        )
+
+    def sheet(css, name, field="css", owner=None):
+        if options.minify_css:
+            css = rcssmin.cssmin(css)
+        if options.assets == "shared":
+            key = {"css": "page_stylesheets", "math_css": "math_stylesheets", "author": "stylesheets"}[field]
+            result[key].append(shared_css(build, page, css, name, owner))
+        elif field == "author":
+            result["inline_stylesheets"].append(css)
+        else:
+            result[field] += css + "\n"
+
+    def authored(name, field):
+        path = build.lookup(name, page)
+        if path.is_relative_to(PACKAGE / "assets"):
+            label = path.stem.removeprefix("page-")
+        else:
+            relative = (
+                path.relative_to(build.source_root)
+                if path.is_relative_to(build.source_root)
+                else Path(path.name)
+            )
+            label = "style-" + "-".join(relative.with_suffix("").parts)
+        sheet(css_file(build, path, page), label, field, str(path))
+
+    for name in dict.fromkeys([*values(css_paths), *values(page.data.get("css"))]):
+        authored(name, "css")
+    if page.data.get("feature_css", options.feature_css):
+        for feature in ("code", "math", "toc", "image", "warning"):
+            if feature in document.features:
+                path = PACKAGE / "assets" / f"feature-{feature}.css"
+                sheet(css_file(build, path, page), feature)
         if "code" in document.features:
-            css.append(build.highlighter.css)
-    result["css"] = "\n".join(css)
-    for name in values(page.data.get("stylesheets", options.stylesheets)):
+            sheet(build.highlighter.css, "highlight")
+    for name in dict.fromkeys([*options.stylesheets, *values(page.data.get("stylesheets"))]):
         if re.match(r"[\w+.-]+:|//", name):
             result["stylesheets"].append(name)
         else:
-            source = (page.source.parent / name).resolve()
-            if not source.exists():
-                source = (options.root / name).resolve()
-            if source.exists():
-                css = css_file(build, source, page)
-                if options.assets == "standalone":
-                    result["inline_stylesheets"].append(css)
-                else:
-                    result["stylesheets"].append(shared_css(build, page, css, "author"))
-            else:
+            try:
+                authored(name, "author")
+            except FileNotFoundError:
                 result["stylesheets"].append(name)
     if "math" in document.features and options.math == "mathjax-chtml":
         root = npm_root(build.source_root, options.root) / "@mathjax/mathjax-tex-font/chtml/woff2"
         fonts = document.fonts
-        if options.math_fonts == "all":
+        if options.math_fonts == "all" or options.assets == "shared":
             fonts = {p.stem.removeprefix("mjx-tex-") for p in root.glob("*.woff2")}
         families = {"MJX-BRK" if font == "brk" else "MJX-TEX-" + font.upper() for font in fonts}
 
@@ -129,7 +183,8 @@ def context(build, page, document, template):
             family = re.search(r'font-family:\s*["\']?([^;"\'\s]+)', match[0])
             return match[0] if family and family[1] in families and options.math_fonts != "none" else ""
 
-        css = re.sub(r"@font-face[^{}]*\{[^}]*\}", font_face, build.math.stylesheet())
+        styles = build.math.stylesheet()
+        css = re.sub(r"@font-face[^{}]*\{[^}]*\}", font_face, styles["base"] or styles["css"])
         delivery = options.math_fonts
         if delivery in {"auto", "all"}:
             delivery = {"standalone": "inline", "shared": "local", "cdn": "remote"}[options.assets]
@@ -141,20 +196,26 @@ def context(build, page, document, template):
             elif delivery == "remote":
                 url = f"{CDN}@mathjax/mathjax-tex-font@{VERSION}/chtml/woff2/{filename}"
             else:
-                target = build.output_root / "assets/md2html/mathjax/woff2" / filename
+                target = build.output_root / "assets/mathjax/woff2" / filename
                 build.copy(root / filename, target)
                 url = build.url(target, page)
                 if filename.removeprefix("mjx-tex-").removesuffix(".woff2") in document.fonts:
                     result["font_preloads"].append(url)
             return f'url("{url}")'
 
-        result["math_css"] = re.sub(r'url\(["\']?mathjax/woff2/([^"\')]+)["\']?\)', font_url, css)
+        sheet(
+            re.sub(r'url\(["\']?mathjax/woff2/([^"\')]+)["\']?\)', font_url, css), "mathjax-chtml", "math_css"
+        )
+        if styles["base"]:
+            # Glyph metrics belong to the rendered page; they must survive independent rebuilds.
+            result["math_css"] = rcssmin.cssmin(styles["css"]) if options.minify_css else styles["css"]
+
     if "math" in document.features and options.math == "mathjax":
         config = {"tex": {"inlineMath": [["$", "$"]], "displayMath": [["$$", "$$"]], "processEscapes": True}}
         result["mathjax_src"] = f"{CDN}mathjax@{VERSION}/tex-mml-chtml.js"
         if options.assets == "shared":
             npm = npm_root(build.source_root, options.root)
-            target = build.output_root / "assets/md2html/mathjax.js"
+            target = build.output_root / "assets/mathjax.js"
             if target.resolve() not in build.copied:
                 build.copy(npm / "mathjax/tex-mml-chtml.js", target)
                 for origin, destination in (
@@ -172,20 +233,12 @@ def context(build, page, document, template):
         elif options.assets == "standalone":
             document.warn("browser MathJax uses the CDN with standalone assets")
         result["mathjax_config"] = "window.MathJax=" + json.dumps(config) + ";"
-    for key in ("css", "math_css"):
-        if options.minify_css:
-            result[key] = rcssmin.cssmin(result[key])
-        if result[key] and options.assets == "shared":
-            url = shared_css(build, page, result[key], key)
-            result["math_stylesheets" if key == "math_css" else "page_stylesheets"].append(url)
-            result[key] = ""
     return result
 
 
-def shared_css(build, page, css, name):
+def shared_css(build, page, css, name, owner=None):
     # Asset URLs in a shared sheet are relative to the sheet, not its page.
     css = re.sub(r'url\("([^"#:]+)"\)', lambda m: 'url("' + build.css_url(m[1], page) + '")', css)
-    digest = hashlib.sha256(css.encode()).hexdigest()[:12]
-    target = build.output_root / f"assets/md2html/{name}-{digest}.css"
-    build.write(target, css, "renderer " + digest)
+    target = build.output_root / "assets" / (name + ".css")
+    build.write(target, css, owner or "renderer " + name)
     return build.url(target, page)

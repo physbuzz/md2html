@@ -68,3 +68,26 @@ def test_installed_command_outside_checkout(tmp_path, backend):
         assert "data:font/woff2;base64," in str(doc)
     readme = subprocess.run(command + ["--readme"], cwd=tmp_path, text=True, capture_output=True, timeout=30)
     assert readme.returncode == 0 and "Yet Another" in readme.stdout
+
+
+@pytest.mark.skipif(
+    not os.environ.get("MD2HTML_TEST_COMMAND"), reason="requires an installed package command"
+)
+def test_installed_incremental_restart_without_toolchain(tmp_path):
+    command = shlex.split(os.environ["MD2HTML_TEST_COMMAND"])
+    source = tmp_path / "note.md"
+    source.write_text("$x^2$\n\n@src(example.h)")
+    (tmp_path / "example.h").write_text("int answer = 42;")
+    result = subprocess.run(command + [str(source)], cwd=tmp_path, text=True, capture_output=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert BeautifulSoup(source.with_suffix(".html").read_text(), "html.parser").select_one(".codehilite .kt")
+    result = subprocess.run(
+        command + [str(source)],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": ""},
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "Built 0 files" in result.stdout

@@ -9,6 +9,7 @@ import yaml
 from liquid.exceptions import LiquidError
 
 from . import execution
+from .incremental import analyze
 
 DIRECTIVE = re.compile(r"^\s*@(src-begin|src|include)\((.*?)\)\s*(?:#.*)?$")
 END = re.compile(r"^\s*@src-end\s*(?:#.*)?$")
@@ -56,7 +57,7 @@ class Stash:
 def liquid_render(environment, text, context, warn):
     text = re.sub(r"{%\s*include\s+([\w./-]+)\s*%}", r"{% include '\1' %}", text)
     try:
-        return environment.from_string(text).render(**context)
+        return analyze(environment, text).render(**context)
     except (LiquidError, RecursionError) as error:
         warn(f"Liquid rendering failed: {error}")
         return text
@@ -74,7 +75,7 @@ class Renderer(mistune.HTMLRenderer):
         number = self.seen.get(base, 0) + 1
         self.seen[base] = number
         identifier = base if number == 1 else f"{base}-{number}"
-        self.headings.append((level, text, identifier))
+        self.headings.append((level, self.document.html.restore(text), identifier))
         return f'<h{level} id="{identifier}">{text}</h{level}>\n'
 
     def block_code(self, code, info=None):
@@ -126,7 +127,7 @@ class Document:
 
     def source_box(self, source, code, language, flags):
         self.features.add("code")
-        markup = self.build.highlighter.code(code, language)
+        markup = self.build.highlighter.code(code, language, filename=source)
         label = html.escape(source.name if source else f"{language} source")
         if source:
             href = self.build.asset_link(source, self.page)
@@ -137,9 +138,15 @@ class Document:
         else:
             markup = f'<div class="code-header">{label}</div>{markup}'
         warnings = []
+        if "noexecute" not in flags:
+            cache = execution.workspace(self.page.source, source, code, language)
+            self.build.dependencies.update([cache / "output.txt", cache / ".complete"])
         output = execution.run(self.options, self.page.source, source, code, language, flags, warnings.append)
         if output is not None:
             markup += f'<div class="code-output"><span>Output:</span><pre>{html.escape(output)}</pre></div>'
+        if not self.options.execute:
+            self.build.warnings.extend(f"{self.page.source}: {warning}" for warning in warnings)
+            warnings = []
         for warning in warnings:
             self.warn(warning, at_end=False)
             markup += f'<aside class="warning">{html.escape(warning)}</aside>'
@@ -256,7 +263,7 @@ class Document:
             else:
                 attrs["alt"] = part
         path = self.reference(name, self.page.source)
-        url = name if re.match(r"[\w+.-]+://", name) else self.build.asset_link(path, self.page)
+        url = name if re.match(r"[\w+.-]+://", name) else self.build.asset_link(path, self.page, media=True)
         width = str(attrs.get("width") or "")
         if width.isdigit():
             width += "px"

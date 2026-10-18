@@ -50,9 +50,10 @@ md2html --math svg test.md -o test-svg.html
 All options:
 
 - `-o, --output PATH`: output file or directory. JSON: `"output"`.
+- `-v, --verbose`: report additional diagnostics, including unavailable cached output for snippets explicitly marked `execute`.
 - `-e, --execute`: run executable examples and show their program output below the source. JSON: `"execute": true`.
 - `-r, --recursive`: include nested documents in `pages` mode. Site, Jekyll, and Jekyll Markdown modes are recursive by default. JSON: `"recursive": true`.
-- `-f, --force`: explicitly request an HTML rebuild. Every build renders all pages; this flag does not rerun cached snippets. JSON: `"force": true`.
+- `-f, --force`: render every page at startup and on watch-triggered builds, even when its inputs are unchanged. This flag does not rerun cached snippets. JSON: `"force": true`.
 - `-F, --force-execution`: rerun executable examples even when their program output is already cached. Requires `--execute`; `-eF` reruns everything. JSON: `"force_execution": true`.
 - `-s, --serve`: build, rebuild on change, and serve the generated pages. The default bind address is `127.0.0.1`.
 - `-w, --watch`: rebuild on change without starting a server.
@@ -64,7 +65,7 @@ All options:
 - `--template NAME`: standalone page template. The default is `page.html`. JSON: `"template"`.
 - `--css FILE`: replace the template's base CSS; repeat to combine files. JSON: `"css"` (a path or list; `[]` means no base CSS).
 - `--stylesheet HREF`: add a stylesheet link; repeat for more. JSON: `"stylesheets"`.
-- `--assets MODE`: `shared`, `standalone`, or `cdn` renderer-asset placement. `--standalone` is an alias for `--assets standalone`. One input file defaults to `standalone`; directories and multiple inputs default to `shared`. JSON: `"assets"`.
+- `--assets MODE`: `shared`, `standalone`, or `cdn` renderer-asset placement. `--standalone` is an alias for `--assets standalone`. `pages` mode defaults to `standalone`, including multiple inputs and directories. Website modes default to `shared`; `--standalone` in a website build also uses shared local assets for an offline site. JSON: `"assets"`.
 - `--no-css`: omit base and feature CSS. JSON: `"css": []` plus `"feature_css": false`.
 - `--no-feature-css`: omit generated CSS for code, math, tables of contents, images, and warnings. JSON: `"feature_css": false`.
 - `--no-minify-css`: leave generated CSS readable. JSON: `"minify_css": false`.
@@ -80,13 +81,25 @@ All options:
 The default Pygments palettes give Wolfram Language blocks black built-ins in light mode, light built-ins in dark mode, blue user symbols, and green patterns and local variables. The light palette derives from `pygments-mathematica`; both Wolfram palettes are defined in `src/md2html/highlight_styles.py`. Other languages keep their usual palette. The style options select a palette for all code blocks; they do not select a programming language.
 
 Command-line settings override JSON settings. A running watch or serve command
-keeps its configuration fixed; restart it after changing configuration. Each
-change rebuilds the complete project, including site listings, while reusing
-successful snippet output. Deleted source pages may leave their HTML behind;
-unused renderer assets and execution workspaces are retained until removed.
+keeps its configuration fixed; restart it after changing configuration. Builds
+skip current pages using dependency records in the output's `.md2html-cache/build.json`.
+These records contain paths, timestamps, and signatures, not partially rendered pages;
+removing them causes a full rebuild. Includes, source snippets, styles, and execution
+outputs are tracked, along with Liquid references to site collections. Adding,
+editing, moving, or deleting posts updates dependent listings and pagination.
+Static files are copied independently, even when no page references them.
+Hidden/underscore paths, `md2html.json`, Gemfiles, `node_modules`, `vendor`,
+and virtual environments are excluded by default. Jekyll `include` can opt
+specific paths back in; explicit `exclude` rules still win.
+Generated pages that disappear from the build plan are removed only if their
+recorded timestamps still match; manually added output files are preserved.
+Unused renderer assets and execution workspaces are retained until removed.
+Use `--force` after changes outside the tracked inputs, such as a renderer dependency
+upgrade or a time-dependent template. Compiler header dependencies still require
+`--force-execution`. Successful program outputs remain usable without execution.
 A single-file `--serve` command without `-o` uses `.md2html-preview/`.
 
-Output rules: one Markdown file with no `-o` writes the page beside the source; several inputs with `-o public` keep their relative paths below `public`. When `-o` moves a page, referenced local images, stylesheets, and files linked by `@src` are copied so their links still work. HTML/HTM/XML inputs get Liquid only — no Markdown, no directives — and keep their suffixes. Give HTML/HTM/XML inputs and single-file Jekyll Markdown exports a distinct `-o` destination.
+Output rules: one Markdown file with no `-o` writes the page beside the source; several inputs with `-o public` keep their relative paths below `public`. Standalone pages embed local media, stylesheets, and files linked by `@src`; shared builds copy referenced files so their links still work. Set `"images": {"embed": false}` to keep media external in standalone pages. Remote URLs remain external. HTML/HTM/XML inputs get Liquid only — no Markdown, no directives — and keep their suffixes. Give HTML/HTM/XML inputs and single-file Jekyll Markdown exports a distinct `-o` destination.
 
 ## Configuration
 With no arguments, `md2html` searches for `md2html.json` in the current directory and its parents. Use `--config` to select another file. Paths inside it are resolved relative to that file's directory.
@@ -104,15 +117,16 @@ A minimal site configuration:
 }
 ```
 
-`md2html --example-config -` prints a fuller starter to stdout.
+`md2html --example-config -` prints a fuller starter to stdout. Example writers require `--force` to overwrite an existing file.
 
 |Key|Meaning|
 |---|---|
 |`input`|Markdown file or source directory.|
 |`exclude`|Skip matching source paths. Exact paths, directory prefixes, and patterns are accepted.|
 |`frontmatter`|Default front matter for Jekyll Markdown output. Source front matter wins.|
-|`paginate`|Site variable giving the posts per paginated `index.html` page.|
+|`paginate`|Site variable giving the visible posts per paginated index page (`index.html` or `index.md`, including nested indexes).|
 |`paginate_path`|Site variable giving the later-page URL; must contain `:num`. Default `/page:num/`.|
+|`images.embed`|Embed local media in standalone pages (default `true`); website assets stay shared.|
 |`images.class`|Default class names for Obsidian images. Per-image classes are appended.|
 |`images.width`|Default Obsidian image width. A per-image width wins.|
 |`commands`|Add or replace execution commands by language name or extension.|
@@ -134,7 +148,7 @@ int main() { std::cout << "Hello, world!\n"; }
 @src-end
 ```
 
-`@src` and `@src-begin` accept `collapsible`, `expanded`, `collapsed`, and `noexecute`. Bad TeX, missing includes, and failed runs warn and otherwise leave the page buildable; invalid front matter and mismatched `@src-begin`/`@src-end` markers stop the build. Invalid configuration, layouts, and conflicting output paths also stop the build.
+`@src` and `@src-begin` accept `collapsible`, `expanded`, `collapsed`, and `noexecute`. Bad TeX, missing includes, and failed runs warn and otherwise leave the page buildable; invalid front matter and mismatched `@src-begin`/`@src-end` markers stop the build. Missing layouts and layout cycles warn and leave the available content; conflicting outputs warn and skip the conflicting file. Invalid configuration and paths escaping the destination stop the build.
 
 ## Executable Snippets
 The best and least safe part about md2html is its ability to execute snippets when the `-e` or `--execute` flag is enabled. There are defaults for python, shell, JavaScript, Racket, Wolfram Language, C, and C++, but you can add custom commands in `md2html.json`. eg:
@@ -167,32 +181,32 @@ Note: some effort is taken to automatically invalidate the cache when the source
 
 ## Math
 There are a few different math backends (choose with `--math`):
-- `mathjax` leaves the TeX in the page and runs MathJax in the browser. With `cdn` it links the JavaScript and fonts from jsDelivr, so the HTML is small but needs a network connection when it is opened. With `shared`, md2html copies the JavaScript and fonts once to `assets/md2html/`; pages remain small and the complete site works offline.
+- `mathjax` leaves the TeX in the page and runs MathJax in the browser. With `cdn` it links the JavaScript and fonts from jsDelivr, so the HTML is small but needs a network connection when it is opened. With `shared`, md2html copies the JavaScript and fonts once to `assets/`; pages remain small and the complete site works offline.
 - `mathjax-chtml` runs MathJax under Node while building and puts static CommonHTML in the page. The finished page runs no MathJax JavaScript. This is the default and my preference for offline pages. A standalone math-heavy page can be 500 KB or larger because its required fonts are embedded.
 - `mathml` has the smallest standalone file size, but I wouldn't wish reading mathml on my worst enemies.
 - `svg` is decent, but large file sizes for math heavy documents.
 
 With the `--assets` flag we can decide where math assets (fonts, js) live.
-- `standalone` is the default for single page generation and embeds supported renderer assets in each page. With browser MathJax, `--math mathjax --assets standalone` warns and uses the CDN instead.
-- `shared` writes them to `assets/md2html/` and is the default for multi-page sites.
+- `standalone` is the default in `pages` mode and embeds local media and renderer assets in each page. With browser MathJax, `--math mathjax --assets standalone` warns and uses the CDN instead.
+- `shared` writes them to `assets/` and is the default for multi-page sites.
 - `cdn` links versioned jsDelivr URLs.
 
 `--math-fonts` controls static CommonHTML font delivery. `auto` follows the
 asset policy: embedded fonts for `standalone`, copied fonts for `shared`, and
 CDN fonts for `cdn`. `inline`, `local`, and `remote` explicitly choose one of
 those deliveries; `all` includes every font using the asset policy's delivery,
-and `none` omits font-face declarations. Only required fonts are preloaded.
+and `none` omits font-face declarations. Shared CommonHTML uses a common stylesheet and font set, with dynamic glyph rules in each page, so rendering a page never removes styles needed by another page. Only required fonts are preloaded.
 
 The following measurements use `examples/notes.md` with execution enabled
 (eight equations). Sizes are rounded KiB; CDN assets are not included in the
-HTML size. Authored figures remain external.
+HTML size. This example has no authored figures.
 
 |Renderer|Asset policy|HTML|Gzipped HTML|
 |---|---|--:|--:|
-|Browser MathJax|CDN|37 KiB|7 KiB|
-|Static CommonHTML|standalone|294 KiB|190 KiB|
-|Native MathML|standalone|41 KiB|8 KiB|
-|Inline SVG|standalone|101 KiB|20 KiB|
+|Browser MathJax|CDN|64 KiB|8 KiB|
+|Static CommonHTML|standalone|320 KiB|191 KiB|
+|Native MathML|standalone|68 KiB|9 KiB|
+|Inline SVG|standalone|128 KiB|22 KiB|
 
 ## Liquid Processor
 
@@ -205,17 +219,33 @@ Markdown and Liquid for Jekyll. Markdown pages without a `layout` use the
 selected page template in every HTML output mode. Static math backends also
 render in `jekyll` mode; custom layouts supply the required styles and scripts
 through the relevant `md2html` asset fields, as shown by `--example-template -`,
-or equivalent author assets. CommonHTML builds warn when a custom layout does
+or equivalent author assets. Use `--math raw` (or `"math": {"backend": "raw"}`) to preserve TeX for your own browser renderer. CommonHTML builds warn when a custom layout does
 not reference its generated math styles; author CSS may provide those rules.
 
 Like Jekyll, dated posts live in `_posts/YYYY-MM-DD-title.md`. `--jekyll` defaults
 to category-prefixed dated post URLs unless `permalink` specifies another pattern. Documents
-elsewhere still build normally and are available through `site.pages`.
+elsewhere still build normally and are available through `site.pages`. Native site URLs can be configured with `"site": {"permalink": "/:year/:month/:day/:title.html"}`; both modes accept `:year`, `:month`, `:day`, `:title`, `:slug`, and `:categories`, plus per-page `permalink`. Posts marked `hidden: true` retain their pages but are omitted from pagination.
 `site.posts`, `site.tags`, and `site.categories` index `_posts`; in native site
 mode `site.pages` contains every discovered page, while `--jekyll` excludes
 posts from `site.pages` as Jekyll does. Native pages do not require
 frontmatter; `--jekyll` follows Jekyll and copies an ordinary frontmatter-free
 document unchanged instead of rendering it as a page.
+
+Templates and layouts search configured `templates` directories in order, then the
+configuration root's `_templates`, the source root's `_includes` and `_layouts`,
+and the bundled templates. Layout names may omit `.html`. Relative front-matter
+CSS paths search the configuration/project root, the page directory, and then
+those template directories. Configured CSS paths resolve beside the configuration
+file; command-line CSS paths resolve from the working directory. Page `css` and
+`stylesheets` append to the configured lists; page `feature_css` overrides the
+global setting. Shared styles use descriptive files directly in `assets/`, such
+as `base.css`, `code.css`, `highlight.css`, and `image.css`.
+
+`site.title` defaults to the source directory's name, and posts receive an `id`
+from their URL. The generated Atom feed contains the newest twenty posts,
+uses `/feed.xml` for its identity and self-link, and dates itself from the newest
+post. Configure `site.author` as a name or an object with `name`, `email`, and
+`url` (or `uri`); otherwise the site title supplies the author name.
 
 Common variables are:
 
