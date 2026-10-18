@@ -16,10 +16,6 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
-    env:
-      # Isolate the optional test dependency from preinstalled runner gems.
-      GEM_HOME: ${{ runner.temp }}/md2html-gems
-      GEM_PATH: ${{ runner.temp }}/md2html-gems
     steps:
       # Action runtimes are separate from the build's .node-version.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,6 +32,11 @@ jobs:
           sudo apt-get install --no-install-recommends -y racket ruby
       - name: Install optional Rouge backend for tests
         run: |
+          # Isolate gems for this step and persist the paths for later tests.
+          export GEM_HOME="$RUNNER_TEMP/md2html-gems"
+          export GEM_PATH="$GEM_HOME"
+          echo "GEM_HOME=$GEM_HOME" >> "$GITHUB_ENV"
+          echo "GEM_PATH=$GEM_PATH" >> "$GITHUB_ENV"
           gem install rouge --version 4.7.0 --no-document
           ruby -rrouge -e 'puts "Testing with Rouge #{Rouge.version}"; abort "Missing GitHub themes" unless %w[github.light github.dark].all? { |name| Rouge::Theme.find(name) }'
       - name: Install locked Python dependencies
