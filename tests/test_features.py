@@ -9,6 +9,63 @@ import pytest
 from bs4 import BeautifulSoup
 
 
+@pytest.mark.parametrize(
+    "arguments", [("--rec",), ("--templates", "templates"), ("--no-css",), ("--math-fonts", "all")]
+)
+def test_cli_rejects_unsupported_options(cli, put, arguments):
+    put("page.md", "A page")
+    result = cli("page.md", *arguments, ok=False)
+    assert "unrecognized arguments" in result.stderr or "invalid choice" in result.stderr
+
+
+def test_template_directory_lookup_order(cli, put, tmp_path):
+    put("page.md", "Body")
+    put("first/custom.html", "First {{ content }}")
+    put("second/custom.html", "Second {{ content }}")
+    put("second/other.html", "Other {{ content }}")
+    arguments = ("page.md", "--math", "raw", "--template-dir", "first", "--template-dir", "second")
+    cli(*arguments, "--template", "custom.html")
+    assert (tmp_path / "page.html").read_text().startswith("First <p>Body</p>")
+    cli(*arguments, "--template", "other.html")
+    assert (tmp_path / "page.html").read_text().startswith("Other <p>Body</p>")
+
+
+def test_no_default_css_retains_author_and_math_styles(cli, put, tmp_path):
+    put("page.md", "$x^2$\n\n```python\nprint(1)\n```\n")
+    put("author.css", "body { color: teal; }")
+    put(
+        "templates/custom.html",
+        '<link rel="stylesheet" href="https://example.test/template.css">'
+        '{% for url in md2html.stylesheets %}<link rel="stylesheet" href="{{url}}">{% endfor %}'
+        '{% for url in md2html.math_stylesheets %}<link rel="stylesheet" href="{{url}}">{% endfor %}'
+        "<style>{{md2html.math_css}}</style>{{content}}",
+    )
+    cli(
+        "page.md",
+        "-o",
+        "html/page.html",
+        "--assets",
+        "shared",
+        "--no-default-css",
+        "--template-dir",
+        "templates",
+        "--template",
+        "custom.html",
+        "--stylesheet",
+        "author.css",
+    )
+    doc = BeautifulSoup((tmp_path / "html/page.html").read_text(), "html.parser")
+    assert doc.select_one('link[href="https://example.test/template.css"]')
+    assert doc.select_one('link[href="assets/style-author.css"]')
+    assert doc.select_one('link[href="assets/mathjax-chtml.css"]')
+    assert "teal" in (tmp_path / "html/assets/style-author.css").read_text()
+    assert "@font-face" in (tmp_path / "html/assets/mathjax-chtml.css").read_text()
+    assert {path.name for path in (tmp_path / "html/assets").glob("*.css")} == {
+        "style-author.css",
+        "mathjax-chtml.css",
+    }
+
+
 def test_pages_embed_media_and_allow_shared_override(cli, put, tmp_path):
     put("notes/picture.svg", '<svg xmlns="http://www.w3.org/2000/svg"/>')
     for name in ("a", "b"):

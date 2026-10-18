@@ -34,7 +34,7 @@ EXAMPLE = {
 
 def parser():
     result = argparse.ArgumentParser(
-        description="Build Markdown pages with Liquid, math, and executable snippets."
+        description="Build Markdown pages with Liquid, math, and executable snippets.", allow_abbrev=False
     )
     result.add_argument("input", nargs="*", default=None)
     result.add_argument("-o", "--output")
@@ -63,16 +63,39 @@ def parser():
     result.add_argument(
         "--output-mode", choices=MODES, help="default: site for directory inputs, pages for listed files"
     )
-    result.add_argument("--jekyll", dest="output_mode", action="store_const", const="jekyll")
     result.add_argument(
-        "--jekyll-markdown", dest="output_mode", action="store_const", const="jekyll-markdown"
+        "--jekyll",
+        dest="output_mode",
+        action="store_const",
+        const="jekyll",
+        help="shortcut for --output-mode jekyll",
+    )
+    result.add_argument(
+        "--jekyll-markdown",
+        dest="output_mode",
+        action="store_const",
+        const="jekyll-markdown",
+        help="shortcut for --output-mode jekyll-markdown",
     )
     result.add_argument("--assets", choices=ASSETS)
-    result.add_argument("--standalone", dest="assets", action="store_const", const="standalone")
+    result.add_argument(
+        "--standalone",
+        dest="assets",
+        action="store_const",
+        const="standalone",
+        help="shortcut for --assets standalone",
+    )
     result.add_argument("--math", choices=BACKENDS)
     result.add_argument("--math-fonts", choices=FONTS)
     result.add_argument("--template")
-    for flag, dest in (("templates", "templates"), ("css", "css"), ("stylesheet", "stylesheets")):
+    result.add_argument(
+        "--template-dir",
+        dest="templates",
+        action="append",
+        metavar="DIR",
+        help="add a template search directory; repeat in lookup order",
+    )
+    for flag, dest in (("css", "css"), ("stylesheet", "stylesheets")):
         result.add_argument("--" + flag, dest=dest, action="append")
     for flag, dest in (
         ("no-feature-css", "feature_css"),
@@ -80,7 +103,11 @@ def parser():
         ("no-liquid", "parse_liquid"),
     ):
         result.add_argument("--" + flag, dest=dest, action="store_false", default=None)
-    result.add_argument("--no-css", action="store_true")
+    result.add_argument(
+        "--no-default-css",
+        action="store_true",
+        help="omit base and feature styling; retain authored stylesheets and math-renderer styles",
+    )
     result.add_argument("--highlighter", choices=("pygments", "rouge"))
     result.add_argument("--highlighter-style")
     result.add_argument("--highlighter-dark-style")
@@ -195,7 +222,7 @@ def main(argv=None):
                         raise ValueError(f"file exists: {destination}; use --force to overwrite")
                     Path(destination).write_text(text)
                 return 0
-        if args.pop("no_css"):
+        if args.pop("no_default_css"):
             args.update(css=[], feature_css=False)
         if not args["input"]:
             args["input"] = None

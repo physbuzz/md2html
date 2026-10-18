@@ -226,7 +226,7 @@ def test_math_backends(cli, put, tmp_path, backend, marker):
 
 
 @pytest.mark.parametrize("assets", ["standalone", "shared", "cdn"])
-@pytest.mark.parametrize("fonts", ["auto", "inline", "local", "remote", "all", "none"])
+@pytest.mark.parametrize("fonts", ["auto", "inline", "local", "remote", "none"])
 def test_font_delivery(cli, put, tmp_path, assets, fonts):
     put("a.md", "$x+1$")
     cli("a.md", "-o", "public/a.html", "--assets", assets, "--math-fonts", fonts)
@@ -236,9 +236,9 @@ def test_font_delivery(cli, put, tmp_path, assets, fonts):
         text += (tmp_path / "public" / unquote(link["href"])).read_text()
     if fonts == "none":
         assert "@font-face" not in text
-    elif fonts == "inline" or fonts in {"auto", "all"} and assets == "standalone":
+    elif fonts == "inline" or fonts == "auto" and assets == "standalone":
         assert "data:font/woff2;base64," in text
-    elif fonts == "remote" or fonts in {"auto", "all"} and assets == "cdn":
+    elif fonts == "remote" or fonts == "auto" and assets == "cdn":
         assert "cdn.jsdelivr.net/npm/@mathjax/mathjax-tex-font@4.1.3" in text
     else:
         assert list((tmp_path / "public/assets").rglob("*.woff2"))
@@ -385,7 +385,7 @@ def test_config_precedence_paths_and_templates(cli, put, tmp_path):
     cli("--config", config, "--no-minify-css")
     text = (tmp_path / "project/public/a.html").read_text()
     assert "body { color: purple; }" in text and ".codehilite" in text
-    cli("--config", config, "--no-css", "-o", "override.html")
+    cli("--config", config, "--no-default-css", "-o", "override.html")
     assert "<style></style>" in (tmp_path / "override.html").read_text()
 
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 MODES = ("pages", "site", "jekyll", "jekyll-markdown")
 BACKENDS = ("mathjax-chtml", "mathjax", "svg", "mathml", "raw")
-FONTS = ("auto", "inline", "local", "remote", "all", "none")
+FONTS = ("auto", "inline", "local", "remote", "none")
 ASSETS = ("standalone", "shared", "cdn")
 PACKAGE = Path(__file__).parent
 MARKDOWN = {".md", ".markdown"}

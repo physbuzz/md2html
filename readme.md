@@ -100,20 +100,20 @@ All options:
 - `-p, --port N`: preview server port. The default is 8000.
 - `--host ADDRESS`: preview server bind address. Use `--serve --host 0.0.0.0 --port 8000` for Docker previews. JSON: `"host"`.
 - `--config PATH`: select a JSON configuration file explicitly.
-- `--output-mode MODE`: `pages`, `site`, `jekyll`, or `jekyll-markdown`. Defaults to `site` when any input is a directory, otherwise `pages`. An explicit mode in configuration or on the command line takes precedence. You can also pass `--jekyll` and `--jekyll-markdown` directly. JSON: `"output_mode"`.
-- `--templates DIR`: template search directory; repeat to add more. JSON: `"templates"`.
+- `--output-mode MODE`: `pages`, `site`, `jekyll`, or `jekyll-markdown`. Defaults to `site` when any input is a directory, otherwise `pages`. An explicit mode in configuration or on the command line takes precedence. `--jekyll` and `--jekyll-markdown` are shortcuts for `--output-mode jekyll` and `--output-mode jekyll-markdown`. JSON: `"output_mode"`.
+- `--template-dir DIR`: template search directory; repeat to add more, in lookup order. JSON: `"templates"`.
 - `--template NAME`: standalone page template. The default is `page.html`. JSON: `"template"`.
 - `--css FILE`: replace the template's base CSS; repeat to combine files. JSON: `"css"` (a path or list; `[]` means no base CSS).
-- `--stylesheet HREF`: add a stylesheet link; repeat for more. JSON: `"stylesheets"`.
+- `--stylesheet FILE_OR_URL`: add an authored stylesheet alongside the base CSS; repeat for more. Local files follow the asset policy; remote URLs remain links. JSON: `"stylesheets"`.
 - `--assets MODE`: `shared`, `standalone`, or `cdn` renderer-asset placement. `--standalone` is an alias for `--assets standalone`. `pages` mode defaults to `standalone`, including multiple files and directories explicitly built with `--output-mode pages`. Website modes default to `shared`; `--standalone` in a website build also uses shared local assets for an offline site. JSON: `"assets"`.
-- `--no-css`: omit base and feature CSS. JSON: `"css": []` plus `"feature_css": false`.
+- `--no-default-css`: omit base and feature CSS when a custom template supplies its own presentation. Authored stylesheets, links written in the template, and required math-renderer styles remain. JSON: `"css": []` plus `"feature_css": false`.
 - `--no-feature-css`: omit generated CSS for code, math, tables of contents, images, and warnings. JSON: `"feature_css": false`.
 - `--no-minify-css`: leave generated CSS readable. JSON: `"minify_css": false`.
 - `--no-liquid`: leave Liquid unchanged in source documents; templates and layouts still render. JSON: `"parse_liquid": false`.
 - `--highlighter NAME`: `pygments` (default) or `rouge`. JSON: `"highlighter"`.
 - `--highlighter-style NAME`, `--highlighter-dark-style NAME`: light and dark token styles from the active highlighter. Pygments defaults to `default` and `github-dark`; Rouge to `github.light` and `github.dark`. JSON: `"highlighter_style"`, `"highlighter_dark_style"`.
 - `--math BACKEND`: `mathjax`, `mathjax-chtml` (default), `svg`, `mathml`, or `raw`. JSON: `"math": {"backend": ...}`.
-- `--math-fonts MODE`: CommonHTML font placement: `auto`, `local`, `remote`, `all`, `inline`, or `none`. JSON: `"math": {"chtml_fonts": ...}`.
+- `--math-fonts MODE`: CommonHTML font delivery: `auto`, `inline`, `local`, `remote`, or `none`. JSON: `"math": {"chtml_fonts": ...}`.
 - `--timeout SECONDS`: time limit for each executed example. The default is 120. JSON: `"timeout"`.
 - `--clean`: remove the output directory before building in `site` or `jekyll` mode. It does not apply to independent page builds. JSON: `"clean": true`.
 - `--version`, `--help`.
@@ -121,7 +121,9 @@ All options:
 
 The default Pygments palettes give Wolfram Language blocks black built-ins in light mode, light built-ins in dark mode, blue user symbols, and green patterns and local variables. The light palette derives from `pygments-mathematica`; both Wolfram palettes are defined in `src/md2html/highlight_styles.py`. Other languages keep their usual palette. The style options select a palette for all code blocks; they do not select a programming language.
 
-Command-line settings override JSON settings. A running watch or serve command
+Command-line settings override JSON settings. Long option names must be written
+in full; explicit short flags such as `-r` are supported. If several mode or asset
+choices are supplied, the last one wins. A running watch or serve command
 keeps its configuration fixed; restart it after changing configuration. Builds
 skip current pages using dependency records in the output's `.md2html-cache/build.json`.
 These records contain paths, timestamps, and signatures, not partially rendered pages;
@@ -265,8 +267,10 @@ With the `--assets` flag we can decide where math assets (fonts, js) live.
 `--math-fonts` controls static CommonHTML font delivery. `auto` follows the
 asset policy: embedded fonts for `standalone`, copied fonts for `shared`, and
 CDN fonts for `cdn`. `inline`, `local`, and `remote` explicitly choose one of
-those deliveries; `all` includes every font using the asset policy's delivery,
-and `none` omits font-face declarations. Shared CommonHTML uses a common stylesheet and font set, with dynamic glyph rules in each page, so rendering a page never removes styles needed by another page. Only required fonts are preloaded.
+those deliveries, and `none` omits font-face declarations so author styles can supply
+them. Standalone pages include only the fonts their equations need; shared CommonHTML
+uses a common stylesheet and full font set, with dynamic glyph rules in each page,
+so rendering a page never removes styles needed by another page. Only required fonts are preloaded.
 
 The following measurements use `examples/notes.md` with execution enabled
 (eight equations). Sizes are rounded KiB; CDN assets are not included in the

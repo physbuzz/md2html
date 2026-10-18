@@ -177,7 +177,7 @@ def context(build, page, document, template):
     if "math" in document.features and options.math == "mathjax-chtml":
         root = npm_root(build.source_root, options.root) / "@mathjax/mathjax-tex-font/chtml/woff2"
         fonts = document.fonts
-        if options.math_fonts == "all" or options.assets == "shared":
+        if options.assets == "shared":
             fonts = {p.stem.removeprefix("mjx-tex-") for p in root.glob("*.woff2")}
         families = {"MJX-BRK" if font == "brk" else "MJX-TEX-" + font.upper() for font in fonts}
 
@@ -188,7 +188,7 @@ def context(build, page, document, template):
         styles = build.math.stylesheet()
         css = re.sub(r"@font-face[^{}]*\{[^}]*\}", font_face, styles["base"] or styles["css"])
         delivery = options.math_fonts
-        if delivery in {"auto", "all"}:
+        if delivery == "auto":
             delivery = {"standalone": "inline", "shared": "local", "cdn": "remote"}[options.assets]
 
         def font_url(match):
