@@ -9,7 +9,12 @@ STDIN.each_line do |line|
       lexer = Rouge::Lexer.find(request['language']) || Rouge::Lexers::PlainText
       result = Rouge::Formatters::HTML.new.format(lexer.lex(request['code']))
     else
-      result = Rouge::Theme.find(request['style']).new(scope: '.codehilite').render
+      theme = Rouge::Theme.find(request['style'])
+      unless theme
+        raise ArgumentError, "Unknown Rouge theme #{request['style'].inspect} (Rouge #{Rouge.version}). " \
+          "Choose another theme or update with 'gem install --user-install rouge'."
+      end
+      result = theme.new(scope: '.codehilite').render
     end
     puts JSON.generate(value: result)
   rescue => error

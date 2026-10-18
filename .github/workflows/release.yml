@@ -16,18 +16,28 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
+    env:
+      # Isolate the optional test dependency from preinstalled runner gems.
+      GEM_HOME: ${{ runner.temp }}/md2html-gems
+      GEM_PATH: ${{ runner.temp }}/md2html-gems
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # Action runtimes are separate from the build's .node-version.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+          package-manager-cache: false
       - name: Install build tools
         run: |
           pipx install uv==0.13.1
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y racket
+          sudo apt-get install --no-install-recommends -y racket ruby
+      - name: Install optional Rouge backend for tests
+        run: |
+          gem install rouge --version 4.7.0 --no-document
+          ruby -rrouge -e 'puts "Testing with Rouge #{Rouge.version}"; abort "Missing GitHub themes" unless %w[github.light github.dark].all? { |name| Rouge::Theme.find(name) }'
       - name: Install locked Python dependencies
         run: make sync
       - name: Validate version tag
@@ -57,7 +67,7 @@ jobs:
           cp dist/md2html "release/md2html-$version-linux-x86_64"
           cd release
           sha256sum md2html-* > SHA256SUMS
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-linux-x86_64
           path: release/*
@@ -72,7 +82,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-linux-x86_64
           path: release

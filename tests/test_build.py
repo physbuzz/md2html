@@ -438,6 +438,16 @@ def test_highlighters(cli, put, tmp_path, request, backend, style):
     assert ".codehilite" in doc.style.text
 
 
+@pytest.mark.parametrize("option", ["--highlighter-style", "--highlighter-dark-style"])
+def test_unknown_rouge_theme_explains_how_to_fix(cli, put, rouge, option):
+    put("a.md", "```python\nprint(42)\n```")
+    result = cli("a.md", "--math", "raw", "--highlighter", "rouge", option, "missing-theme", ok=False)
+    assert 'Unknown Rouge theme "missing-theme"' in result.stderr
+    assert "gem install --user-install rouge" in result.stderr
+    assert "undefined method" not in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_moved_page_assets_and_image_options(cli, put, tmp_path):
     put("images/a.svg", '<svg xmlns="http://www.w3.org/2000/svg"/>')
     put("x.py", "print(1)")
