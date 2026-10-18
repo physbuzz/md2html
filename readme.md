@@ -16,10 +16,8 @@ md2html --example-css -       # print editable default CSS to stdout
 ```
 ## Install
 
-Building from a checkout requires uv 0.13.1 and Node.js 22.23.3. uv selects
-the Python version in `.python-version`, downloading it if needed. Python
-dependencies come from `uv.lock`; JavaScript dependencies use `npm ci`.
-Builds require the lockfiles to match their manifests and do not upgrade dependencies.
+Building from a checkout requires uv 0.13.1 and Node.js 22.23.3. uv downloads
+the required Python version if needed.
 
 ```bash
 make install # build and copy it to ~/.local/bin/md2html
