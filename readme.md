@@ -30,10 +30,10 @@ make pyinstaller
 sudo make install-global 
 ```
 
-Prebuilt releases support Linux x86-64 with glibc 2.35 or newer. Download the executable from [GitHub Releases](https://github.com/physbuzz/md2html/releases) and install it (replace `3.0.0` with the downloaded version):
+Prebuilt releases support Linux x86-64 with glibc 2.35 or newer. Download the executable from [GitHub Releases](https://github.com/physbuzz/md2html/releases) and install it (replace `1.0.0` with the downloaded version):
 
 ```bash
-install -Dm755 md2html-3.0.0-linux-x86_64 ~/.local/bin/md2html
+install -Dm755 md2html-1.0.0-linux-x86_64 ~/.local/bin/md2html
 md2html --update # or -U; update the packaged executable and exit
 ```
 
