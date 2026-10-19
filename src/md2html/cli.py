@@ -120,10 +120,16 @@ def parser():
 
 
 def report(build):
+    started = time.perf_counter()
     paths = build.build()
+    elapsed = time.perf_counter() - started
     for warning in build.warnings:
         print("warning: " + warning, file=sys.stderr, flush=True)
-    print(f"Built {len(paths)} files in {build.output_root}", flush=True)
+    if paths and (len(paths) == 1 or build.options.output_mode == "pages"):
+        destination = ", ".join(map(str, paths))
+    else:
+        destination = f"{len(paths)} files in {build.output_root}"
+    print(f"Built {destination} in {elapsed:.1f} seconds", flush=True)
 
 
 class Changes(FileSystemEventHandler):

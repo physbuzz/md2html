@@ -1,6 +1,8 @@
 """Syntax highlighting with one reusable backend per build session."""
 
 import html
+import re
+from html.parser import HTMLParser
 
 from mathematica import MathematicaLexer
 from pygments import highlight
@@ -22,6 +24,52 @@ class WolframLexer(MathematicaLexer):
     tokens = {"strings": [(r"\\\r?\n", String), inherit]}
 
 
+class HighlightUsage(HTMLParser):
+    """Collect conservatively: authored markup and template content count too."""
+
+    def __init__(self, body):
+        super().__init__()
+        self.classes = set()
+        self.scopes = set()
+        self.feed(body)
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        classes = (attrs.get("class") or "").split()
+        self.classes.update(classes)
+        if "codehilite" in classes:
+            self.scopes.add("wolfram" if attrs.get("data-language") == "wl" else "regular")
+
+    def prune(self, css):
+        # Only recognize selectors emitted by our highlighters. Keep unfamiliar
+        # selectors intact, including complex selectors from custom Rouge themes.
+        selector = re.compile(
+            r'\.codehilite(?P<scope>:not\(\[data-language="wl"\]\)|\[data-language="wl"\])?'
+            r"(?:\s+\.(?P<token>[\w-]+))?"
+        )
+
+        def needed(value):
+            match = selector.fullmatch(value.strip())
+            if not match:
+                return True
+            scope = match["scope"]
+            if scope:
+                language = "regular" if scope.startswith(":not") else "wolfram"
+                if language not in self.scopes:
+                    return False
+            return match["token"] is None or match["token"] in self.classes
+
+        def rule(match):
+            if any(not selector.fullmatch(value.strip()) for value in match[1].split(",")):
+                return match[0]
+            selectors = [value.strip() for value in match[1].split(",") if needed(value)]
+            return ", ".join(selectors) + " {" + match[2] + "}" if selectors else ""
+
+        # These are generated theme styles, never user-authored stylesheets.
+        css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+        return re.sub(r"([^{}]+)\{([^{}]*)\}", rule, css)
+
+
 class Highlighter:
     def __init__(self, options):
         self.worker = None
@@ -38,11 +86,15 @@ class Highlighter:
         light = options.highlighter_style or ("github.light" if self.worker else "default")
         dark = options.highlighter_dark_style or ("github.dark" if self.worker else "github-dark")
         try:
-            light_css, dark_css = (self.style(style) for style in (light, dark))
+            self.light_css, self.dark_css = (self.style(style) for style in (light, dark))
         except Exception:
             self.close()
             raise
-        self.css = (
+        self.css = self.themed(self.light_css, self.dark_css)
+
+    @staticmethod
+    def themed(light_css, dark_css):
+        return (
             "@media (prefers-color-scheme: light) {\n"
             + light_css.replace(".codehilite", 'html:not([data-theme="dark"]) .codehilite')
             + "\n}\n"
@@ -52,6 +104,10 @@ class Highlighter:
             + light_css.replace(".codehilite", 'html[data-theme="light"] .codehilite')
             + dark_css.replace(".codehilite", 'html[data-theme="dark"] .codehilite')
         )
+
+    def css_for(self, body):
+        usage = HighlightUsage(body)
+        return self.themed(usage.prune(self.light_css), usage.prune(self.dark_css))
 
     def style(self, name):
         if self.worker:

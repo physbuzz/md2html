@@ -84,6 +84,23 @@ def embed_css(build, path, stack=()):
     return re.sub(r"url\(([^)]+)\)", resource, text)
 
 
+def prune_highlighting(build, document, body):
+    if build.options.assets == "shared" or "code" not in document.features:
+        return body
+    original = build.highlighter.css
+    subset = build.highlighter.css_for(body)
+    if build.options.minify_css:
+        original, subset = (rcssmin.cssmin(css) for css in (original, subset))
+    # Wait for the final HTML so code in layouts and includes is accounted for.
+    # Replace only our generated stylesheet within inline style elements.
+    return re.sub(
+        r"(<style\b[^>]*>)(.*?)(</style\s*>)",
+        lambda match: match[1] + match[2].replace(original, subset) + match[3],
+        body,
+        flags=re.I | re.S,
+    )
+
+
 def context(build, page, document, template):
     options = build.options
     directory = build.output_root / "assets" if options.assets == "shared" else page.target.parent
@@ -229,7 +246,5 @@ def context(build, page, document, template):
                 output={"fontPath": "[fonts]/%%FONT%%-font"},
             )
             result["mathjax_src"] = build.url(target, page.target.parent)
-        elif options.assets == "standalone":
-            document.warn("browser MathJax uses the CDN with standalone assets")
         result["mathjax_config"] = "window.MathJax=" + json.dumps(config) + ";"
     return result

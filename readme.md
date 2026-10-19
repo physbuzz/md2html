@@ -228,9 +228,11 @@ Another feature of `md2html` is the many options for how to build LaTeX typeset 
 
 `--assets` decides where renderer assets (fonts, JavaScript) and local media live:
 
-- `standalone` (default in `pages` mode) tries to embed everything in each page to a single output file, including images. Browser MathJax isn't embedded, so `--math mathjax --assets standalone` warns and uses the CDN instead.
+- `standalone` (default in `pages` mode) tries to embed everything in each page to a single output file, including images. Browser MathJax isn't embedded, so `--math mathjax --assets standalone` uses the CDN instead.
 - `shared` (default for multi-page sites) copies them once into `assets/`; pages stay small and the whole site works offline. Website builds given `--standalone` also use shared local assets.
 - `cdn` links versioned jsDelivr URLs: small HTML, but the page needs a network connection when opened.
+
+Inline syntax-highlighting CSS includes only the token styles needed by each rendered page, retaining light and dark themes. Shared highlighting stylesheets keep the complete palettes so cached pages remain styled correctly during partial rebuilds.
 
 `--math-fonts` controls CommonHTML font delivery on its own: `auto` follows the asset policy (embedded, copied, or CDN fonts), `inline`, `local`, and `remote` force one of those, and `none` emits no `@font-face` rules so your own stylesheet can supply them.
 
