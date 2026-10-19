@@ -326,7 +326,7 @@ tags: [math, calculus]
 What gets built:
 
 - Markdown inputs are rendered; HTML, HTM, and XML inputs get Liquid only and keep their suffixes, so give them a distinct output destination. Directory builds also copy other files as static assets, whether or not a page references them. With `--output-mode pages` and no output destination, only Markdown files are built beside their sources; other files stay in place.
-- Native directory builds skip dotfiles and dot-directories, underscore directories other than `_posts`, `md2html.json` at the input root, and any separate output directory. Generated files are ignored while watching. Jekyll mode applies [Jekyll's default exclusions](https://jekyllrb.com/docs/configuration/default/), and `include` in `_config.yml` can opt paths back in. Explicit `exclude` rules always win.
+- Native directory builds skip dotfiles and dot-directories, underscore files and directories other than `_posts`, `md2html.json` at the input root, and any separate output directory. Generated files are ignored while watching. Jekyll mode applies [Jekyll's default exclusions](https://jekyllrb.com/docs/configuration/default/), and `include` in `_config.yml` can opt paths back in. Explicit `exclude` rules always win.
 
 What travels with a page:
 

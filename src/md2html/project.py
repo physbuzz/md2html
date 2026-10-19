@@ -190,7 +190,7 @@ class Build:
                 for part in relative.parts
             )
         return any(part.startswith(".") for part in relative.parts) or any(
-            part.startswith("_") and part != "_posts" for part in relative.parts[:-1]
+            part.startswith("_") and part != "_posts" for part in relative.parts
         )
 
     def discover(self):

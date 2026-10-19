@@ -208,6 +208,7 @@ def test_site_selection_and_jekyll_explicit_include(cli, put, tmp_path):
         cli("-r", "site", "-o", "out-" + mode, "--output-mode", mode, "--math", "raw")
         output = tmp_path / ("out-" + mode)
         assert (output / "img/share.gif").exists()
+        assert not (output / "_download.txt").exists()
         for name in ("md2html.json", "_private", ".venv", "nested/.secret", ".hidden", "skip"):
             assert not (output / name).exists()
         for name in ("vendor/file.txt", "venv/file.txt", "nested/md2html.json", "node_modules/keep/file.js"):
@@ -221,7 +222,6 @@ def test_site_selection_and_jekyll_explicit_include(cli, put, tmp_path):
             "vendor/cache",
             "vendor/gems",
             "vendor/ruby",
-            "_download.txt",
             "backup.txt~",
             "#draft.txt",
             "~draft.txt",
