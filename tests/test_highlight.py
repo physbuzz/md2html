@@ -82,7 +82,7 @@ def test_inline_styles_are_page_specific_and_refresh(cli, put, tmp_path, request
     cli(*args)
     assert re.search(r"\.s\s*\{", stylesheet(plain))
     assert other.stat().st_mtime_ns == before
-    assert "Built 0 files" in cli(*args).stdout
+    assert "Built 0 pages" in cli(*args).stdout
 
 
 @pytest.mark.parametrize("mode", ["pages", "site", "jekyll"])

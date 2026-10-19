@@ -6,6 +6,7 @@ import math
 import os
 import re
 import shutil
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,7 @@ from .highlight import Highlighter
 from .incremental import Environment, State, Templates, stamp
 from .math import Math
 from .render import Document, frontmatter, liquid_render, slugify
+from .reporting import local_path
 
 
 @dataclass
@@ -57,6 +59,7 @@ class Build:
         self.collections = set()
         self.collection_keys = {"posts", "pages", "tags", "categories", "tag_list", "category_list"}
         self.warnings = []
+        self.diagnostics = []
         self.owners = {}
         self.copied = set()
         self.written = []
@@ -83,12 +86,16 @@ class Build:
             "absolute_url",
             lambda value: str(self.site_config.get("url", "")).rstrip("/") + self.relative_url(value),
         )
-        self.highlighter = Highlighter(options)
+        self.highlighter = Highlighter(options, diagnostic=self.diagnostic)
         self.math = Math(options)
 
     def close(self):
         self.math.close()
         self.highlighter.close()
+
+    def diagnostic(self, message):
+        if self.options.verbose:
+            self.diagnostics.append(message)
 
     def relative_url(self, value):
         return str(self.site_config.get("baseurl", "")).rstrip("/") + "/" + str(value or "").lstrip("/")
@@ -99,13 +106,15 @@ class Build:
     def claim(self, target, owner):
         target = target.resolve()
         if not target.is_relative_to(self.output_root):
-            raise ValueError(f"output escapes destination: {target}")
+            raise ValueError(f"output escapes destination: {local_path(target)}")
         previous = self.owners.setdefault(target, owner)
         if previous != owner:
-            self.warnings.append(f"output collision at {target}: {previous} and {owner}; skipping {owner}")
+            self.warnings.append(
+                f"output collision at {local_path(target)}: {local_path(previous)} and {local_path(owner)}; skipping {local_path(owner)}"
+            )
             return None
         if target in self.source_files:
-            self.warnings.append(f"output would overwrite source: {target}; skipping")
+            self.warnings.append(f"output would overwrite source: {local_path(target)}; skipping")
             return None
         return target
 
@@ -199,7 +208,7 @@ class Build:
         multiple_dirs = sum(path.is_dir() for path in self.options.input) > 1
         for source in self.options.input:
             if not source.exists():
-                raise ValueError(f"input does not exist: {source}")
+                raise ValueError(f"input does not exist: {local_path(source)}")
             if not self.in_place and source.is_dir() and source.is_relative_to(self.output_root):
                 raise ValueError("output directory must not contain an input directory")
             paths = source.glob("**/*" if self.options.recursive else "*") if source.is_dir() else [source]
@@ -218,7 +227,7 @@ class Build:
                 )
                 if path.suffix.lower() not in DOCUMENTS:
                     if source.is_file():
-                        raise ValueError(f"unsupported page type: {path}")
+                        raise ValueError(f"unsupported page type: {local_path(path)}")
                     static.append((path, self.output_root / relative))
                     continue
                 text = path.read_text()
@@ -293,7 +302,7 @@ class Build:
                 elif self.output_file:
                     target = self.options.output
                 if target.resolve() == path:
-                    self.warnings.append(f"source and output are the same file: {path}; skipping")
+                    self.warnings.append(f"source and output are the same file: {local_path(path)}; skipping")
                     continue
                 data["url"] = "/" + url.lstrip("/")
                 if post:
@@ -377,7 +386,7 @@ class Build:
                 self.dependencies.add(path)
                 if path.is_file():
                     return path
-        raise FileNotFoundError(f"file not found: {name}")
+        raise FileNotFoundError(f"file not found: {local_path(name) if Path(name).is_absolute() else name}")
 
     def relocate(self, text, page):
         def resolve(name):
@@ -439,7 +448,7 @@ class Build:
                 document.warn(str(error))
                 break
             if path in seen:
-                document.warn(f"layout cycle: {path}")
+                document.warn(f"layout cycle: {local_path(path)}")
                 break
             seen.add(path)
             metadata, text = frontmatter(path.read_text())
@@ -509,8 +518,9 @@ class Build:
             ET.SubElement(entry, "{" + namespace + "}link", href=absolute(post["url"]))
         return ET.tostring(root, encoding="unicode")
 
-    def build(self):
+    def build(self, *, reporter=None):
         self.warnings.clear()
+        self.diagnostics.clear()
         self.owners.clear()
         self.copied.clear()
         self.written.clear()
@@ -523,6 +533,8 @@ class Build:
                 raise ValueError("clean output must not contain input")
             shutil.rmtree(self.output_root)
         state = State(self)
+        if reporter:
+            reporter.warnings()
         watched = set(self.dependencies)
         for page in pages:
             self.dependencies = {page.source}
@@ -531,8 +543,9 @@ class Build:
             if not state.current(page):
                 # Only dependencies observed for this render belong to the new output.
                 self.dependencies = {page.source}
-                self.write(page.target, self.render_page(page), str(page.source))
-                state.remember(page)
+                with reporter.page(page.target) if reporter else nullcontext():
+                    self.write(page.target, self.render_page(page), str(page.source))
+                    state.remember(page)
             watched.update(self.dependencies)
         self.dependencies = watched
         for source, target in static:

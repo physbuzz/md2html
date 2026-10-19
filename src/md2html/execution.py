@@ -14,6 +14,7 @@ import time
 import psutil
 
 from .incremental import stamp
+from .reporting import ExecutionWarning, local_path
 
 ALIASES = {
     "py": "python",
@@ -91,7 +92,7 @@ def run(build, page, source, code, language, flags, warn):
     if not options.execute:
         if options.verbose:
             warn(
-                f"cached output unavailable for {source or language + ' inline snippet'}; use --execute to generate it"
+                f"cached output unavailable for {local_path(source) if source else language + ' inline snippet'}; use --execute to generate it"
             )
         return None
     suffix = SUFFIXES.get(language, "." + language) if inline else source.suffix
@@ -151,17 +152,25 @@ def run(build, page, source, code, language, flags, warn):
                     terminate(process, existing)
                 except (OSError, psutil.Error, subprocess.TimeoutExpired) as error:
                     raise RuntimeError(f"could not complete execution cleanup: {error}") from error
-                warn(f"execution timed out after {options.timeout:g}s: {source}")
+                warn(f"execution timed out after {options.timeout:g}s: {local_path(source)}")
                 return None
         if process.returncode:
-            warn(f"execution failed for {source}: {stderr.strip() or stdout.strip() or process.returncode}")
+            warn(
+                ExecutionWarning(
+                    f"execution failed for {local_path(source)} (exit {process.returncode})",
+                    stdout,
+                    stderr,
+                )
+            )
             return None
+        if stderr.strip():
+            build.diagnostic(f"execution stderr for {local_path(source)}:\n{stderr.rstrip()}")
         if not output.exists():
             output.write_text(stdout)
         complete.touch()
         return output.read_text()
     except (OSError, KeyError, ValueError) as error:
-        warn(f"could not execute {source}: {error}")
+        warn(f"could not execute {local_path(source)}: {error}")
         return None
     finally:
         build.execution_writes.update({path: stamp(path) for path in (output, complete)})

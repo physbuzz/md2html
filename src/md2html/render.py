@@ -3,12 +3,14 @@
 import html
 import re
 import uuid
+from dataclasses import replace
 
 import mistune
 import yaml
 from liquid.exceptions import LiquidError
 
 from . import execution
+from .reporting import ExecutionWarning, local_path
 
 DIRECTIVE = re.compile(r"^\s*@(src-begin|src|include)\((.*?)\)\s*(?:#.*)?$")
 END = re.compile(r"^\s*@src-end\s*(?:#.*)?$")
@@ -108,8 +110,13 @@ class Document:
 
     def warn(self, message, *, at_end=True):
         if at_end:
-            self.warnings.append(message)
-        self.build.warnings.append(f"{self.page.source}: {message}")
+            self.warnings.append(str(message))
+        prefix = f"{local_path(self.page.source)}: "
+        self.build.warnings.append(
+            replace(message, message=prefix + message.message)
+            if isinstance(message, ExecutionWarning)
+            else prefix + message
+        )
         self.features.add("warning")
 
     def block(self, markup):
@@ -141,11 +148,11 @@ class Document:
         if output is not None:
             markup += f'<div class="code-output"><span>Output:</span><pre>{html.escape(output)}</pre></div>'
         if not self.options.execute:
-            self.build.warnings.extend(f"{self.page.source}: {warning}" for warning in warnings)
+            self.build.warnings.extend(f"{local_path(self.page.source)}: {warning}" for warning in warnings)
             warnings = []
         for warning in warnings:
             self.warn(warning, at_end=False)
-            markup += f'<aside class="warning">{html.escape(warning)}</aside>'
+            markup += f'<aside class="warning">{html.escape(str(warning))}</aside>'
         classes = "code-box" if source else "code-box inline-source"
         return self.block(f'<div class="{classes}">{markup}</div>')
 
@@ -154,7 +161,7 @@ class Document:
         result = []
         for number, line in lines:
             if END.fullmatch(line.strip()):
-                raise ValueError(f"unexpected @src-end in {origin}:{number}")
+                raise ValueError(f"unexpected @src-end in {local_path(origin)}:{number}")
             match = DIRECTIVE.fullmatch(line.strip())
             if match:
                 kind, arguments = match.groups()
@@ -165,20 +172,21 @@ class Document:
                         if END.fullmatch(code_line.strip()):
                             break
                         if re.match(r"\s*@src-begin\(", code_line):
-                            raise ValueError(f"nested @src-begin in {origin}:{end_number}")
+                            raise ValueError(f"nested @src-begin in {local_path(origin)}:{end_number}")
                         code.append(code_line)
                     else:
-                        raise ValueError(f"missing @src-end in {origin}:{number}")
+                        raise ValueError(f"missing @src-end in {local_path(origin)}:{number}")
                     result.append(self.source_box(None, "".join(code), name, set(flags)))
                 else:
                     path = self.reference(name, origin)
                     try:
                         if kind == "include" and path in (*stack, origin):
-                            raise OSError(f"include cycle: {path}")
+                            raise OSError(f"include cycle: {local_path(path)}")
                         value = path.read_text()
                     except OSError as error:
-                        self.warn(str(error))
-                        result.append(self.block(f'<aside class="warning">{html.escape(str(error))}</aside>'))
+                        message = f"could not read {local_path(path)}: {error.strerror or error}"
+                        self.warn(message)
+                        result.append(self.block(f'<aside class="warning">{html.escape(message)}</aside>'))
                         continue
                     if kind == "src":
                         result.append(self.source_box(path, value, path.suffix.lstrip("."), set(flags)))
@@ -190,7 +198,7 @@ class Document:
                 result.append("\n\n" + self.toc_token + "\n\n")
             else:
                 if re.match(r"\s*@(?:src|include)\b", line):
-                    self.warn(f"malformed directive at {origin}:{number}")
+                    self.warn(f"malformed directive at {local_path(origin)}:{number}")
                 # Included Markdown references retain their fragment's directory.
                 if origin != self.page.source:
 

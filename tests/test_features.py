@@ -126,7 +126,7 @@ def test_directory_defaults_to_site_and_excludes_nested_output(cli, put, tmp_pat
     assert (tmp_path / "html/assets/base.css").exists()
     assert (tmp_path / "html/nested/page.html").exists()
     assert (tmp_path / "html/feed.xml").exists()
-    assert "Built 0 files" in cli(*args).stdout
+    assert "Built 0 pages" in cli(*args).stdout
     assert not (tmp_path / "html/html").exists()
     assert (tmp_path / "html/keep.txt").read_text() == "User output file"
 
@@ -390,7 +390,7 @@ def test_embedded_css_dependencies_and_external_references(cli, put, tmp_path):
     text = target.read_text()
     assert "data:font/woff2;base64," in text
     assert 'url("https://example.com/bg.png")' in text and 'url("#effect")' in text
-    assert "Built 0 files" in cli(*args).stdout
+    assert "Built 0 pages" in cli(*args).stdout
     image.write_text("<svg>SECOND</svg>")
     cli(*args)
     assert target.read_text() != text
@@ -421,7 +421,7 @@ def test_incremental_restart_dependencies_and_collections(cli, put, tmp_path):
     cli(*args)
     paths = [tmp_path / "html" / name for name in ("index.html", "a.html", "b.html")]
     before = [p.stat().st_mtime_ns for p in paths]
-    assert "Built 0 files" in cli(*args).stdout
+    assert "Built 0 pages" in cli(*args).stdout
     assert before == [p.stat().st_mtime_ns for p in paths]
     put("site/fragment.txt", "# CHANGED")
     cli(*args)
@@ -469,7 +469,7 @@ def test_incremental_restart_skips_math_renderer(cli, put, tmp_path, monkeypatch
     put("a.md", "$x^2$")
     cli("a.md")
     monkeypatch.setenv("PATH", "")
-    assert "Built 0 files" in cli("a.md").stdout
+    assert "Built 0 pages" in cli("a.md").stdout
     result = cli("a.md", "--force", ok=False)
     assert "node" in result.stderr
 

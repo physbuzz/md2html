@@ -71,8 +71,9 @@ class HighlightUsage(HTMLParser):
 
 
 class Highlighter:
-    def __init__(self, options):
+    def __init__(self, options, diagnostic=None):
         self.worker = None
+        self.diagnostic = diagnostic
         self.lexers = {}
         self.formatter = HtmlFormatter(nowrap=True)
         if options.highlighter == "rouge":
@@ -142,6 +143,8 @@ class Highlighter:
                     )
                 except ClassNotFound:
                     lexer = TextLexer()
+                    if language and self.diagnostic:
+                        self.diagnostic(f"unknown highlighting language {language!r}; using plain text")
                 self.lexers[language] = lexer
             tokens = highlight(value, self.lexers[language], self.formatter)
         label = "c++" if language == "cpp" else language

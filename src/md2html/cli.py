@@ -19,6 +19,7 @@ from . import __version__
 from .config import ASSETS, BACKENDS, FONTS, MODES, PACKAGE, resolve
 from .incremental import stamp
 from .project import Build
+from .reporting import Reporter, diagnostic_message, duration
 from .update import update
 
 EXAMPLE = {
@@ -121,17 +122,20 @@ def parser():
     return result
 
 
-def report(build):
+def report(build, *, initial=True):
     started = time.perf_counter()
-    paths = build.build()
+    reporter = Reporter(build)
+    if initial:
+        print(f"Building in {os.path.relpath(build.output_root)} ...", flush=True)
+    try:
+        build.build(reporter=reporter)
+    finally:
+        reporter.warnings()
     elapsed = time.perf_counter() - started
-    for warning in build.warnings:
-        print("warning: " + warning, file=sys.stderr, flush=True)
-    if paths and (len(paths) == 1 or build.options.output_mode == "pages"):
-        destination = ", ".join(os.path.relpath(path) for path in paths)
-    else:
-        destination = f"{len(paths)} files in {os.path.relpath(build.output_root)}"
-    print(f"Built {destination} in {elapsed:.1f} seconds", flush=True)
+    if initial:
+        count = reporter.pages
+        noun = "page" if count == 1 else "pages"
+        print(f"Built {count} {noun} in {os.path.relpath(build.output_root)} ({duration(elapsed)})", flush=True)
 
 
 class Changes(FileSystemEventHandler):
@@ -173,6 +177,13 @@ class Changes(FileSystemEventHandler):
                 self.changed.set()
 
 
+class PreviewHandler(SimpleHTTPRequestHandler):
+    def log_request(self, code="-", size="-"):
+        # Routine browser requests must not obscure the preview address or builds.
+        if str(code).isdigit() and int(code) >= 400:
+            super().log_request(code, size)
+
+
 def watch(build):
     events = Changes(build)
     observer = Observer()
@@ -195,7 +206,7 @@ def watch(build):
         if build.options.serve:
             server = ThreadingHTTPServer(
                 (build.options.host, build.options.port),
-                partial(SimpleHTTPRequestHandler, directory=str(build.output_root)),
+                partial(PreviewHandler, directory=str(build.output_root)),
             )
             threading.Thread(target=server.serve_forever, daemon=True).start()
             path = (
@@ -210,10 +221,10 @@ def watch(build):
                 if not events.take():
                     continue
                 try:
-                    report(build)
+                    report(build, initial=False)
                     subscribe()
                 except (OSError, ValueError, YAMLError) as error:
-                    print(f"error: {error}", file=sys.stderr, flush=True)
+                    print(f"error: {diagnostic_message(error, build.options.verbose)}", file=sys.stderr, flush=True)
     finally:
         observer.stop()
         observer.join()
@@ -224,6 +235,7 @@ def watch(build):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    verbose = False
     try:
         options = argv[: argv.index("--")] if "--" in argv else argv
         if "-U" in options or "--update" in options:
@@ -258,7 +270,9 @@ def main(argv=None):
             args.update(css=[], feature_css=False)
         if not args["input"]:
             args["input"] = None
+        verbose = bool(args.get("verbose"))
         options = resolve(args)
+        verbose = options.verbose
         build = Build(options)
         try:
             report(build)
@@ -270,7 +284,7 @@ def main(argv=None):
     except KeyboardInterrupt:
         return 0
     except (OSError, ValueError, RuntimeError, HTTPException, YAMLError) as error:
-        print(f"error: {error}", file=sys.stderr)
+        print(f"error: {diagnostic_message(error, verbose)}", file=sys.stderr)
         return 1
 
 

@@ -12,6 +12,7 @@ from liquid import FileSystemLoader
 from liquid.exceptions import LiquidError
 
 from .config import PACKAGE
+from .reporting import local_path
 
 
 def signature(value):
@@ -58,8 +59,13 @@ class State:
         try:
             self.records = json.loads(self.path.read_text())
             if not isinstance(self.records, dict):
-                self.records = {}
-        except (OSError, ValueError):
+                raise ValueError("expected an object")
+            if any(not isinstance(record, dict) for record in self.records.values()):
+                raise ValueError("expected output records to be objects")
+        except FileNotFoundError:
+            self.records = {}
+        except (OSError, ValueError) as error:
+            build.diagnostic(f"cannot read build cache {local_path(self.path)}; rebuilding: {error}")
             self.records = {}
         settings = asdict(build.options)
         for key in ("watch", "serve", "force", "force_execution", "clean", "host", "port"):
@@ -115,6 +121,8 @@ class State:
             if record.get("scope") == self.scope and target not in self.build.owners:
                 if target.is_relative_to(self.root) and stamp(target) == record.get("stamp"):
                     target.unlink(missing_ok=True)
+                elif target.is_relative_to(self.root) and target.exists():
+                    self.build.diagnostic(f"keeping modified obsolete output: {local_path(target)}")
                 del self.records[name]
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(".tmp")

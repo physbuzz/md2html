@@ -90,4 +90,4 @@ def test_installed_incremental_restart_without_toolchain(tmp_path):
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    assert "Built 0 files" in result.stdout
+    assert "Built 0 pages" in result.stdout
