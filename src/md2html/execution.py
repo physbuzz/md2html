@@ -13,6 +13,8 @@ import time
 
 import psutil
 
+from .incremental import stamp
+
 ALIASES = {
     "py": "python",
     "js": "javascript",
@@ -161,3 +163,5 @@ def run(build, page, source, code, language, flags, warn):
     except (OSError, KeyError, ValueError) as error:
         warn(f"could not execute {source}: {error}")
         return None
+    finally:
+        build.execution_writes.update({path: stamp(path) for path in (output, complete)})

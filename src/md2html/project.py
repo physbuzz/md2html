@@ -60,6 +60,7 @@ class Build:
         self.owners = {}
         self.copied = set()
         self.written = []
+        self.execution_writes = {}
         self.site_config = {}
         config = self.source_root / "_config.yml"
         if options.output_mode == "jekyll" and config.exists():

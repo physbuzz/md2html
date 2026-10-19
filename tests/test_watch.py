@@ -151,7 +151,64 @@ def test_restart_serve_racket_cache_and_source_updates(cli, put, tmp_path, direc
         put("notes/example.rkt", '#lang racket\n(displayln "RACKET-SECOND")\n')
         until(lambda: "RACKET-SECOND" in page())
         assert (tmp_path / "notes/counter").read_text() == "1"
+        time.sleep(0.7)
+        log = (tmp_path / ".watch.log").read_text()
+        assert log.count("Built ") == 2, log
+        assert "Built public/a.html in " in log
         assert process.poll() is None
+
+
+@pytest.mark.parametrize("flag", ["-ew", "-es"])
+def test_execution_cache_writes_do_not_trigger_rebuilds(put, tmp_path, flag):
+    put("notes/a.md", "@src(example.rkt)\n")
+    put("notes/example.rkt", '#lang racket\n(displayln "FIRST")\n')
+    with watching(tmp_path, flag, "notes/a.md", "-o", "public", "--math", "raw", "--port", 0):
+        target = tmp_path / "public/a.html"
+        log = tmp_path / ".watch.log"
+        until(lambda: "Built public/a.html in " in log.read_text())
+        time.sleep(0.3)
+        put("notes/example.rkt", '#lang racket\n(displayln "SECOND")\n')
+        until(lambda: "SECOND" in target.read_text())
+        time.sleep(0.7)
+        assert log.read_text().count("Built ") == 2, log.read_text()
+
+        # The execution cache is still a dependency when changed externally.
+        output = next(
+            path
+            for path in (tmp_path / "notes/.md2html-cache/a").rglob("output.txt")
+            if path.read_text().strip() == "SECOND"
+        )
+        output.write_text("EXTERNAL CACHE EDIT")
+        until(lambda: "EXTERNAL CACHE EDIT" in target.read_text())
+
+
+def test_source_edit_during_cache_write_is_not_discarded(put, tmp_path):
+    from watchdog.events import FileModifiedEvent
+
+    from md2html.cli import Changes
+    from md2html.config import resolve
+    from md2html.incremental import stamp
+    from md2html.project import Build
+
+    source = put("a.md", "FIRST")
+    cached = put(".md2html-cache/output.txt", "FIRST")
+    build = Build(resolve({"input": [str(source)], "math": "raw"}))
+    try:
+        build.dependencies.add(cached)
+        events = Changes(build)
+        cached.write_text("SECOND")
+        events.on_any_event(FileModifiedEvent(str(cached)))
+        # The event arrives before execution has finished recording its writes.
+        build.execution_writes[cached] = stamp(cached)
+        assert not events.take()
+
+        events.on_any_event(FileModifiedEvent(str(cached)))
+        source.write_text("SECOND")
+        events.on_any_event(FileModifiedEvent(str(source)))
+        assert events.take()
+        assert not events.changed.is_set()
+    finally:
+        build.close()
 
 
 def test_watch_without_server_external_include_and_recovery(cli, put, tmp_path):

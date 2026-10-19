@@ -15,6 +15,7 @@ htmlcov/
 /browser-artifacts/
 /playwright-report/
 /test-results/
+/user-test-cases/
 /artifacts/
 
 # Package dependencies and build output

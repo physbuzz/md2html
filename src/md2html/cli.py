@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import sys
 import threading
 import time
@@ -16,6 +17,7 @@ from yaml import YAMLError
 
 from . import __version__
 from .config import ASSETS, BACKENDS, FONTS, MODES, PACKAGE, resolve
+from .incremental import stamp
 from .project import Build
 from .update import update
 
@@ -126,9 +128,9 @@ def report(build):
     for warning in build.warnings:
         print("warning: " + warning, file=sys.stderr, flush=True)
     if paths and (len(paths) == 1 or build.options.output_mode == "pages"):
-        destination = ", ".join(map(str, paths))
+        destination = ", ".join(os.path.relpath(path) for path in paths)
     else:
-        destination = f"{len(paths)} files in {build.output_root}"
+        destination = f"{len(paths)} files in {os.path.relpath(build.output_root)}"
     print(f"Built {destination} in {elapsed:.1f} seconds", flush=True)
 
 
@@ -136,6 +138,20 @@ class Changes(FileSystemEventHandler):
     def __init__(self, build):
         self.build = build
         self.changed = threading.Event()
+        self.pending = set()
+        self.lock = threading.Lock()
+
+    def take(self):
+        with self.lock:
+            paths = self.pending
+            self.pending = set()
+            self.changed.clear()
+        # Execution writes may arrive while a build is still running. Compare
+        # after it finishes, when its cache writes have been recorded.
+        return any(
+            path not in self.build.execution_writes or stamp(path) != self.build.execution_writes[path]
+            for path in paths
+        )
 
     def on_any_event(self, event):
         if event.event_type not in {"modified", "created", "deleted", "moved"} or event.is_directory:
@@ -152,7 +168,9 @@ class Changes(FileSystemEventHandler):
                 and path.is_relative_to(self.build.output_root)
             ):
                 continue
-            self.changed.set()
+            with self.lock:
+                self.pending.add(path)
+                self.changed.set()
 
 
 def watch(build):
@@ -189,7 +207,8 @@ def watch(build):
         while True:
             if events.changed.wait(0.3):
                 time.sleep(0.1)
-                events.changed.clear()
+                if not events.take():
+                    continue
                 try:
                     report(build)
                     subscribe()
