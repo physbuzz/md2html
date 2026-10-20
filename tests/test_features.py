@@ -1,6 +1,7 @@
 """User-visible build choices and dependency behavior."""
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -501,6 +502,38 @@ def test_incremental_cache_changes_and_missing_assets(cli, put, tmp_path):
     (tmp_path / "html/x.svg").unlink()
     cli(*args)
     assert (tmp_path / "html/x.svg").exists()
+
+
+def test_build_indexes_stay_with_sources_and_separate_destinations(cli, put, tmp_path, monkeypatch):
+    put("notes/a.md", "@src(counter.py)")
+    put(
+        "notes/counter.py",
+        'from pathlib import Path\np = Path("runs")\n'
+        'p.write_text(str(int(p.read_text()) + 1) if p.exists() else "1")\n'
+        'print("CACHED RESULT")\n',
+    )
+    cli("notes", "-o", "html", "--math", "raw", "-e")
+    for destination in ("html", "preview"):
+        args = ("notes", "-o", destination, "--math", "raw", "--no-execute")
+        cli(*args)
+        assert "Built 0 pages" in cli(*args).stdout
+        assert not list((tmp_path / destination).rglob(".md2html-cache"))
+
+    cache = tmp_path / "notes/.md2html-cache"
+    indexes = list(cache.glob("build-*.json"))
+    assert len(indexes) == 2
+    assert "Built 0 pages" in cli("notes", "-o", "html", "--math", "raw", "--no-execute").stdout
+    assert list(cache.rglob("output.txt")) and list(cache.rglob(".complete"))
+
+    # A deployment needs execution results, but no previous build index or toolchain.
+    for index in indexes:
+        index.unlink()
+    shutil.rmtree(tmp_path / "html")
+    monkeypatch.setenv("PATH", "")
+    cli("notes", "-o", "html", "--math", "raw", "--no-execute")
+    assert "CACHED RESULT" in (tmp_path / "html/a.html").read_text()
+    assert (tmp_path / "notes/runs").read_text() == "1"
+    assert not list((tmp_path / "html").rglob(".md2html-cache"))
 
 
 def test_incremental_restart_skips_math_renderer(cli, put, tmp_path, monkeypatch):

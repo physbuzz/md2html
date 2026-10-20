@@ -55,7 +55,8 @@ class State:
     def __init__(self, build):
         self.build = build
         self.root = build.output_root
-        self.path = self.root / ".md2html-cache/build.json"
+        destination = signature(os.path.relpath(self.root, build.source_root))[:16]
+        self.path = build.source_root / ".md2html-cache" / f"build-{destination}.json"
         try:
             self.records = json.loads(self.path.read_text())
             if not isinstance(self.records, dict):

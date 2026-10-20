@@ -110,11 +110,14 @@ def test_failed_program_output_is_preserved(cli, put, tmp_path, verbose, stream)
 
 @pytest.mark.parametrize("cache", ["{bad json", "[]", '{"a.html": 42}'])
 @pytest.mark.parametrize("verbose", [False, True])
-def test_unusable_cache_diagnostic(cli, put, verbose, cache):
+def test_unusable_cache_diagnostic(cli, put, tmp_path, verbose, cache):
     put("a.md", "A")
-    put(".md2html-cache/build.json", cache)
+    cli("a.md", "--math", "raw")
+    index = next((tmp_path / ".md2html-cache").glob("build-*.json"))
+    index.write_text(cache)
     result = cli("a.md", "--math", "raw", *(("-v",) if verbose else ()))
-    assert ("cannot read build cache .md2html-cache/build.json; rebuilding" in result.stderr) == verbose
+    message = f"cannot read build cache .md2html-cache/{index.name}; rebuilding"
+    assert (message in result.stderr) == verbose
 
 
 @pytest.mark.parametrize("verbose", [False, True])
@@ -136,7 +139,8 @@ def test_modified_obsolete_output_diagnostic(cli, put, tmp_path, verbose):
     result = cli(*args)
     assert ("keeping modified obsolete output: out/a.html" in result.stderr) == verbose
     assert output.read_text() == "User edit"
-    assert "a.html" not in json.loads((tmp_path / "out/.md2html-cache/build.json").read_text())
+    index = next((tmp_path / "notes/.md2html-cache").glob("build-*.json"))
+    assert "a.html" not in json.loads(index.read_text())
 
 
 def test_external_missing_include_uses_relative_path(cli, put, tmp_path):

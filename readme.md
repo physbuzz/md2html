@@ -213,8 +213,9 @@ For inline `@src-begin` snippets, `{source}` is written inside `{builddir}` and 
 Caching:
 
 - Completed runs, including nonzero exits, are cached under `.md2html-cache` beside the page and displayed on later builds even without `--execute`. Timeouts are not cached. `noexecute` suppresses both running and display.
+- Incremental build indexes live at `.md2html-cache/build-*.json` in the input root, separately for each output directory. They are disposable and should not be committed or deployed.
 - The cache is invalidated when the snippet's own source changes, but not when a `#include`d header or a `commands` entry changes. Use `-eF` to rerun everything.
-- To deploy from a machine without the necessary build environments, make sure that the `.md2html-cache` folder is up-to-date and build with `--no-execute`. If a program's output isn't found in such an environment, it will only give a warning if the `--verbose` flag is enabled.
+- To deploy without the necessary build environments, commit the execution caches' `output.txt` and `.complete` files and build with `--no-execute`. Missing cached output is reported only with `--verbose`.
 
 ### Math
 
