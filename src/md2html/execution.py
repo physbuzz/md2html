@@ -14,7 +14,7 @@ import time
 import psutil
 
 from .incremental import stamp
-from .reporting import ExecutionWarning, local_path
+from .reporting import local_path
 
 ALIASES = {
     "py": "python",
@@ -154,21 +154,13 @@ def run(build, page, source, code, language, flags, warn):
                     raise RuntimeError(f"could not complete execution cleanup: {error}") from error
                 warn(f"execution timed out after {options.timeout:g}s: {local_path(source)}")
                 return None
-        if process.returncode:
-            warn(
-                ExecutionWarning(
-                    f"execution failed for {local_path(source)} (exit {process.returncode})",
-                    stdout,
-                    stderr,
-                )
-            )
-            return None
-        if stderr.strip():
-            build.diagnostic(f"execution stderr for {local_path(source)}:\n{stderr.rstrip()}")
-        if not output.exists():
-            output.write_text(stdout)
+        if output.exists():
+            stdout = output.read_text() + stdout
+        separator = "\n" if stdout and stderr and not stdout.endswith("\n") else ""
+        text = stdout + separator + stderr
+        output.write_text(text)
         complete.touch()
-        return output.read_text()
+        return text
     except (OSError, KeyError, ValueError) as error:
         warn(f"could not execute {local_path(source)}: {error}")
         return None

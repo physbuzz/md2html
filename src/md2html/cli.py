@@ -44,7 +44,7 @@ def parser():
     result.add_argument("--config")
     for short, name, help_text in (
         ("v", "verbose", "report additional build diagnostics"),
-        ("e", "execute", "execute snippets (successful output is cached)"),
+        ("e", "execute", "execute snippets (completed runs are cached)"),
         ("r", "recursive", "include nested source directories"),
         ("f", "force", "render every page even when its inputs are unchanged"),
         ("F", "force-execution", "rerun cached snippets; requires --execute"),

@@ -3,6 +3,7 @@
 import json
 
 import pytest
+from bs4 import BeautifulSoup
 
 from md2html.cli import report
 from md2html.config import resolve
@@ -79,19 +80,18 @@ def test_failed_page_is_not_reported_as_done(cli, put, tmp_path):
 
 
 @pytest.mark.parametrize("verbose", [False, True])
-def test_subprocess_diagnostics(cli, put, verbose):
+def test_program_stdout_and_stderr_are_page_output(cli, put, tmp_path, verbose):
     put("a.md", "@src(fail.py)\n@src(success.py)")
     put("fail.py", "import sys\nprint('FULL STDOUT')\nsys.stderr.write('DETAIL\\nFINAL ERROR\\n')\nsys.exit(7)")
     put("success.py", "import sys\nsys.stderr.write('SUCCESS STDERR\\n')\nprint('OK')")
     result = cli("a.md", "--math", "raw", "-e", *(("-v",) if verbose else ()))
-    failure = (
-        "warning: a.md: execution failed for fail.py (exit 7)\n"
-        "stdout:\nFULL STDOUT\nstderr:\nDETAIL\nFINAL ERROR\n"
-    )
-    assert result.stderr.startswith(failure)
-    assert ("SUCCESS STDERR" in result.stderr) == verbose
-    assert result.stderr.count("warning: ") == 1 + int(verbose)
-    assert "execution output for" not in result.stderr
+    assert not result.stderr
+    doc = BeautifulSoup((tmp_path / "a.html").read_text(), "html.parser")
+    assert [node.text for node in doc.select(".code-output pre")] == [
+        "FULL STDOUT\nDETAIL\nFINAL ERROR\n",
+        "OK\nSUCCESS STDERR\n",
+    ]
+    assert not doc.select(".warning")
 
 
 @pytest.mark.parametrize("verbose", [False, True])
@@ -102,10 +102,10 @@ def test_failed_program_output_is_preserved(cli, put, tmp_path, verbose, stream)
     write = f"sys.{stream}.write({detail!r})\n" if stream != "neither" else ""
     put("fail.py", "import sys\n" + write + "sys.exit(1)\n")
     result = cli("a.md", "--math", "raw", "-e", *(("-v",) if verbose else ()))
-    expected = "warning: a.md: execution failed for fail.py (exit 1)\n"
-    if stream != "neither":
-        expected += detail
-    assert result.stderr == expected
+    assert not result.stderr
+    doc = BeautifulSoup((tmp_path / "a.html").read_text(), "html.parser")
+    assert doc.select_one(".code-output pre").text == (detail if stream != "neither" else "")
+    assert not doc.select(".warning")
 
 
 @pytest.mark.parametrize("cache", ["{bad json", "[]", '{"a.html": 42}'])

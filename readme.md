@@ -178,7 +178,7 @@ int main() { std::cout << "Hello, world!\n"; }
 
 #### Code Execution
 
-With `-e`/`--execute`, `@src` and `@src-begin` blocks are run and their output is shown beneath the code, unless the noexecute flag is specified in a given code block. Commands are built in for Python, shell, JavaScript, Racket, Wolfram Language, C, and C++. Note that `md2html` is intended to be a tool for article writing or notetaking, it is **not** intended to be a fully featured build or dev environment. 
+With `-e`/`--execute`, `@src` and `@src-begin` blocks are run and their stdout and stderr are shown together beneath the code, including when the program exits with an error. The `noexecute` flag suppresses execution and output. Commands are built in for Python, shell, JavaScript, Racket, Wolfram Language, C, and C++. Note that `md2html` is intended to be a tool for article writing or notetaking, it is **not** intended to be a fully featured build or dev environment.
 
 For custom build commands, add or replace them under `commands` in `md2html.json`, keyed by language name or file extension:
 
@@ -208,7 +208,7 @@ For inline `@src-begin` snippets, `{source}` is written inside `{builddir}` and 
 
 Caching:
 
-- Successful output is saved under `.md2html-cache` beside the page and is displayed on later builds even without `--execute`. `noexecute` suppresses both running and display.
+- Completed runs, including nonzero exits, are cached under `.md2html-cache` beside the page and displayed on later builds even without `--execute`. Timeouts are not cached. `noexecute` suppresses both running and display.
 - The cache is invalidated when the snippet's own source changes, but not when a `#include`d header or a `commands` entry changes. Use `-eF` to rerun everything.
 - To deploy from a machine without the necessary build environments, make sure that the `.md2html-cache` folder is up-to-date and build with `--no-execute`. If a program's output isn't found in such an environment, it will only give a warning if the `--verbose` flag is enabled.
 

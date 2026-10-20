@@ -4,28 +4,7 @@ import os
 import sys
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass
 from pathlib import Path
-
-
-@dataclass
-class ExecutionWarning:
-    """A failure with captured program output that must remain unabridged."""
-
-    message: str
-    stdout: str
-    stderr: str
-
-    def __str__(self):
-        text = self.message
-        for name, output in (("stdout", self.stdout), ("stderr", self.stderr)):
-            if output:
-                if not text.endswith("\n"):
-                    text += "\n"
-                if self.stdout and self.stderr:
-                    text += name + ":\n"
-                text += output
-        return text
 
 
 def local_path(path):
@@ -70,11 +49,7 @@ class Reporter:
 
     def warnings(self):
         for message in self.build.warnings[self.reported:]:
-            message = (
-                str(message)
-                if isinstance(message, ExecutionWarning)
-                else diagnostic_message(message, self.build.options.verbose)
-            )
+            message = diagnostic_message(message, self.build.options.verbose)
             print("warning: " + message, end="" if message.endswith("\n") else "\n", file=sys.stderr, flush=True)
         self.reported = len(self.build.warnings)
         for message in self.build.diagnostics:

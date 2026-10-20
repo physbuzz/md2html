@@ -3,14 +3,13 @@
 import html
 import re
 import uuid
-from dataclasses import replace
 
 import yaml
 from liquid.exceptions import LiquidError
 
 from . import execution
 from .markdown import FENCE, Renderer, fenced_blocks
-from .reporting import ExecutionWarning, local_path
+from .reporting import local_path
 
 DIRECTIVE = re.compile(r"^\s*@(src-begin|src|include)\((.*?)\)\s*(?:#.*)?$")
 END = re.compile(r"^\s*@src-end\s*(?:#.*)?$")
@@ -80,12 +79,7 @@ class Document:
     def warn(self, message, *, at_end=True):
         if at_end:
             self.warnings.append(str(message))
-        prefix = f"{local_path(self.page.source)}: "
-        self.build.warnings.append(
-            replace(message, message=prefix + message.message)
-            if isinstance(message, ExecutionWarning)
-            else prefix + message
-        )
+        self.build.warnings.append(f"{local_path(self.page.source)}: {message}")
         self.features.add("warning")
 
     def block(self, markup):

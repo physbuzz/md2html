@@ -141,7 +141,7 @@ def test_custom_commands_workspaces_and_artifacts(cli, put, tmp_path):
 
 
 @pytest.mark.parametrize("mode", ["pages", "jekyll-markdown"])
-def test_execution_warning_stays_with_collapsed_snippet(cli, put, tmp_path, mode):
+def test_command_error_uses_output_box_beside_collapsed_snippet(cli, put, tmp_path, mode):
     put("missing.wl", "1 + 1\n")
     put(
         "page.md",
@@ -158,17 +158,55 @@ def test_execution_warning_stays_with_collapsed_snippet(cli, put, tmp_path, mode
         ),
     )
     result = cli("page.md", "--output-mode", mode, "-o", "rendered")
-    assert "md2html-test-missing-wolframscript" in result.stderr
+    assert not result.stderr
     output = tmp_path / "rendered" / ("page.md" if mode == "jekyll-markdown" else "page.html")
     doc = soup(output)
     boxes = doc.select(".code-box")
-    warning = doc.select_one("aside.warning")
-    assert len(doc.select("aside.warning")) == 1
-    assert warning.parent == boxes[0]
-    assert warning.find_parent("details") is None
-    assert "md2html-test-missing-wolframscript" in warning.text
-    assert not boxes[1].select(".warning")
+    error_output = boxes[0].select_one(".code-output")
+    assert error_output.parent == boxes[0]
+    assert error_output.find_parent("details") is None
+    assert "md2html-test-missing-wolframscript" in error_output.text
+    assert not doc.select(".warning")
     assert "successful output" in boxes[1].select_one(".code-output").text
+
+
+def test_nonzero_output_is_cached_exported_and_can_be_rerun(cli, put, tmp_path):
+    put(
+        "fail.py",
+        "from pathlib import Path\nimport sys\n"
+        "counter = Path('counter')\n"
+        "number = int(counter.read_text()) + 1 if counter.exists() else 1\n"
+        "counter.write_text(str(number))\n"
+        "print(f'Run {number}')\nsys.stderr.write('intentional error\\n')\nsys.exit(3)\n",
+    )
+    put("a.md", "@src(fail.py)\n")
+    cli("a.md", "-e", "--math", "raw")
+    expected = "Run 1\nintentional error\n"
+    assert soup(tmp_path / "a.html").select_one(".code-output pre").text == expected
+    cli("a.md", "-ef", "--math", "raw")
+    cli("a.md", "--no-execute", "--jekyll-markdown", "-o", "export/a.md", "--math", "raw")
+    cli("export/a.md", "-o", "export/a.html", "--math", "raw")
+    assert (tmp_path / "counter").read_text() == "1"
+    for path in ("a.html", "export/a.md", "export/a.html"):
+        doc = soup(tmp_path / path)
+        assert doc.select_one(".code-output pre").text == expected
+        assert not doc.select(".warning")
+    cli("a.md", "-eF", "--math", "raw")
+    assert (tmp_path / "counter").read_text() == "2"
+    assert soup(tmp_path / "a.html").select_one(".code-output pre").text == "Run 2\nintentional error\n"
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_redirected_output_retains_stdout_and_stderr(cli, put, tmp_path, exit_code):
+    put("a.md", "@src-begin(custom)\nexample\n@src-end\n")
+    command = (
+        "printf 'saved output' > {output}; "
+        "printf ' and stdout'; printf 'stderr\\n' >&2; "
+        f"exit {exit_code}"
+    )
+    put("md2html.json", json.dumps({"commands": {"custom": command}}))
+    cli("a.md", "-e", "--math", "raw")
+    assert soup(tmp_path / "a.html").select_one(".code-output pre").text == "saved output and stdout\nstderr\n"
 
 
 @pytest.mark.parametrize(
