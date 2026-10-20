@@ -127,7 +127,6 @@ class Math:
                 document.fonts.update(name.lower() for name in re.findall(r"\bTEX-([A-Z0-9]+)\b", rendered))
                 if "mjx-break" in rendered:
                     document.fonts.add("brk")
-                document.features.add("math_copy")
 
                 def accessible(match):
                     tag = match[0]

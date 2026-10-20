@@ -28,6 +28,44 @@ def test_template_directory_lookup_order(cli, put, tmp_path):
     assert (tmp_path / "page.html").read_text().startswith("Other <p>Body</p>")
 
 
+@pytest.mark.parametrize("template", ["page.html", "barebones.html"])
+@pytest.mark.parametrize("assets", ["standalone", "shared"])
+def test_default_templates_escape_text_and_attributes(cli, put, tmp_path, template, assets):
+    filename = "notes <draft> &copy;.md"
+    title = "Notes </title> &copy; <draft>"
+    language = 'en" data-extra="unexpected'
+    stylesheet = 'https://example.test/style.css?a=1&copy;=2&label="notes"'
+    author_css = 'em::after { content: "<&>"; }'
+    put("author.css", author_css)
+    put(
+        filename,
+        "---\n"
+        f"title: {json.dumps(title)}\nlang: {json.dumps(language)}\n"
+        f"stylesheets: [{json.dumps(stylesheet)}, author.css]\n"
+        "---\n<em>Authored HTML</em> and $x^2$.\n",
+    )
+    result = cli(
+        filename, "--template", template, "--assets", assets, "--math", "mathml",
+        "--no-minify-css", "-o", "out.html",
+    )
+    assert not result.stderr
+    doc = BeautifulSoup((tmp_path / "out.html").read_text(), "html.parser")
+    assert doc.title.text == title
+    assert doc.html["lang"] == language
+    assert not doc.html.has_attr("data-extra")
+    assert stylesheet in [link["href"] for link in doc.select('link[rel="stylesheet"]')]
+    assert doc.select_one("em").text == "Authored HTML"
+    assert doc.select_one(".math-copy-source").text == "$x^2$"
+    assert doc.select_one("math.math-rendered")
+    assert not doc.select("script[data-md2html-math-copy]")
+    if assets == "standalone":
+        assert author_css in [style.text.strip() for style in doc.select("style")]
+    else:
+        assert (tmp_path / "assets/style-author.css").read_text() == author_css
+    if template == "page.html":
+        assert doc.select_one(".page-title").text == filename
+
+
 def test_no_default_css_retains_author_and_math_styles(cli, put, tmp_path):
     put("page.md", "$x^2$\n\n```python\nprint(1)\n```\n")
     put("author.css", "body { color: teal; }")

@@ -262,6 +262,7 @@ def test_math_backends(cli, put, tmp_path, backend, marker):
         assert not doc.select("script[src]")
     if backend in {"svg", "mathml", "mathjax-chtml"}:
         assert len(doc.select(".math-copy-source")) == 3
+        assert not doc.select("script[data-md2html-math-copy]")
 
 
 @pytest.mark.parametrize("assets", ["standalone", "shared", "cdn"])

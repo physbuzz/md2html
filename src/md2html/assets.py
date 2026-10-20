@@ -110,7 +110,7 @@ def context(build, page, document, template):
     result.update(
         {
             "has_" + feature: feature in document.features
-            for feature in ("code", "math", "math_copy", "toc", "image", "warning")
+            for feature in ("code", "math", "toc", "image", "warning")
         }
     )
     result["has_images"] = result["has_image"]

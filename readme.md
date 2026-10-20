@@ -289,9 +289,9 @@ The usual `if`, `unless`, `for`, `assign`, and `include` tags are available, alo
 A title and a post list:
 
 ```liquid
-<title>{{ page.title }} · {{ site.title }}</title>
+<title>{{ page.title | escape }} · {{ site.title | escape }}</title>
 {% for post in site.posts %}
-  <a href="{{ post.url | relative_url }}">{{ post.title }}</a>
+  <a href="{{ post.url | relative_url | escape }}">{{ post.title | escape }}</a>
 {% endfor %}
 ```
 

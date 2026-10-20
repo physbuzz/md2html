@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="{{ page.lang | default: 'en' }}">
+<html lang="{{ page.lang | default: 'en' | escape }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{ page.title }}</title>
+  <title>{{ page.title | escape }}</title>
   <script>
 (function () {
   var groups = ["theme", "width", "type", "text"];
@@ -42,14 +42,14 @@
   });
 })();
   </script>
-  {% for font in md2html.font_preloads %}<link rel="preload" href="{{ font }}" as="font" type="font/woff2" crossorigin>
+  {% for font in md2html.font_preloads %}<link rel="preload" href="{{ font | escape }}" as="font" type="font/woff2" crossorigin>
   {% endfor %}
-  {% for stylesheet in md2html.page_stylesheets %}<link rel="stylesheet" href="{{ stylesheet }}">
+  {% for stylesheet in md2html.page_stylesheets %}<link rel="stylesheet" href="{{ stylesheet | escape }}">
   {% endfor %}
   {% if md2html.css %}<style>
 {{ md2html.css }}
   </style>{% endif %}
-  {% for stylesheet in md2html.math_stylesheets %}<link rel="stylesheet" href="{{ stylesheet }}">
+  {% for stylesheet in md2html.math_stylesheets %}<link rel="stylesheet" href="{{ stylesheet | escape }}">
   {% endfor %}
   {% if md2html.math_css %}<style>
 {{ md2html.math_css }}
@@ -57,15 +57,15 @@
   {% for stylesheet in md2html.inline_stylesheets %}<style>
 {{ stylesheet }}
   </style>{% endfor %}
-  {% for stylesheet in md2html.stylesheets %}<link rel="stylesheet" href="{{ stylesheet }}">
+  {% for stylesheet in md2html.stylesheets %}<link rel="stylesheet" href="{{ stylesheet | escape }}">
   {% endfor %}
   {% if md2html.mathjax_src %}<script>{{ md2html.mathjax_config }}</script>
-  <script id="MathJax-script" defer src="{{ md2html.mathjax_src }}"></script>{% endif %}
+  <script id="MathJax-script" defer src="{{ md2html.mathjax_src | escape }}"></script>{% endif %}
 </head>
 <body>
   <main class="container">
     <header class="page-header">
-      <div class="page-title">{{ page.name }}</div>
+      <div class="page-title">{{ page.name | escape }}</div>
       <details class="reader-widget">
         <summary aria-label="reader controls" title="Reader controls">Aa</summary>
         <form aria-label="reader controls">
@@ -99,7 +99,6 @@
 {{ content }}
     </article>
   </main>
-  {% if md2html.has_math_copy %}{% include "math-copy.html" %}{% endif %}
   <script>
 (function () {
   var groups = ["theme", "width", "type", "text"];
