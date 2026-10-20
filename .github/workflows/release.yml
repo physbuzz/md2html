@@ -56,10 +56,12 @@ jobs:
           PY
       - name: Build executable without root privileges
         run: make pyinstaller
-      - name: Test source and packaged executable
+      - name: Test source
         run: |
           .venv/bin/ruff check src tests
-          MD2HTML_TEST_COMMAND="$PWD/dist/md2html" make test
+          make test
+      - name: Test packaged executable
+        run: make test-packaged
       - name: Prepare checksummed release assets
         run: |
           version="$(.venv/bin/python -c 'from md2html import __version__; print(__version__)')"

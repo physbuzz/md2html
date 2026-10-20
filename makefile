@@ -3,7 +3,7 @@ UV ?= uv
 LOCAL_BIN ?= $(HOME)/.local/bin
 GLOBAL_BIN ?= /usr/local/bin
 
-.PHONY: sync test pyinstaller install install-global clean
+.PHONY: sync test test-packaged pyinstaller install install-global clean
 
 sync:
 	@test "$$(id -u)" != 0 || { echo "Build as a regular user; use sudo only for make install-global." >&2; exit 1; }
@@ -11,6 +11,13 @@ sync:
 
 test: sync
 	$(PYTHON) -m pytest -q
+
+test-packaged: sync
+	MD2HTML_TEST_COMMAND="$(CURDIR)/dist/md2html" $(PYTHON) -m pytest -q \
+		tests/test_packaged.py \
+		tests/test_build.py::test_directives_liquid_code_and_includes \
+		tests/test_build.py::test_site_layouts_listing_pagination_and_feed \
+		tests/test_watch.py::test_restart_serve_racket_cache_and_source_updates
 
 pyinstaller: sync
 	npm ci --ignore-scripts
