@@ -78,6 +78,30 @@ def test_longer_and_unclosed_fences(cli, put, tmp_path):
     ]
 
 
+def test_multiline_inline_code_stays_literal(cli, put, tmp_path):
+    put("page.md", "Code `{{ untouched }}\n$x$` and *emphasis*.\n")
+    cli("page.md", "--math", "raw")
+    doc = read_html(tmp_path / "page.html")
+    assert doc.select_one("p code").text == "{{ untouched }}\n$x$"
+    assert not doc.select(".math")
+
+
+@pytest.mark.parametrize("source", ["{{ page.example }}", "{% include 'example.md' %}"])
+def test_liquid_generated_fences_are_highlighted(cli, put, tmp_path, source):
+    code = 'print("{{ literal }} $literal$")\n'
+    put("_includes/example.md", "```python\nprint(123)\n```\n")
+    put(
+        "page.md",
+        "---\nexample: |\n  ```python\n  print(123)\n  ```\n---\n"
+        + "```python\n" + code + "```\n\n" + source + "\n",
+    )
+    cli("page.md", "--math", "raw")
+    doc = read_html(tmp_path / "page.html")
+    assert [node.text for node in doc.select("pre code")] == [code, "print(123)\n"]
+    assert len(doc.select('.codehilite[data-language="python"] .nb')) == 2
+    assert not doc.select(".math")
+
+
 def test_extensions_and_literal_counterparts(cli, put, tmp_path):
     put(
         "page.md",

@@ -84,21 +84,15 @@ def embed_css(build, path, stack=()):
     return re.sub(r"url\(([^)]+)\)", resource, text)
 
 
-def prune_highlighting(build, document, body):
-    if build.options.assets == "shared" or "code" not in document.features:
+def finish_highlighting(build, document, body):
+    placeholder = document.html.prefix + "CSS"
+    if placeholder not in body:
         return body
-    original = build.highlighter.css
-    subset = build.highlighter.css_for(body)
+    # Generate once, after code in layouts and includes is available.
+    css = build.highlighter.css_for(body)
     if build.options.minify_css:
-        original, subset = (rcssmin.cssmin(css) for css in (original, subset))
-    # Wait for the final HTML so code in layouts and includes is accounted for.
-    # Replace only our generated stylesheet within inline style elements.
-    return re.sub(
-        r"(<style\b[^>]*>)(.*?)(</style\s*>)",
-        lambda match: match[1] + match[2].replace(original, subset) + match[3],
-        body,
-        flags=re.I | re.S,
-    )
+        css = rcssmin.cssmin(css)
+    return body.replace(placeholder, css)
 
 
 def context(build, page, document, template):
@@ -179,7 +173,10 @@ def context(build, page, document, template):
                 path = PACKAGE / "assets" / f"feature-{feature}.css"
                 sheet(path.read_text(), feature)
         if "code" in document.features:
-            sheet(build.highlighter.css, "highlight")
+            if options.assets == "shared":
+                sheet(build.highlighter.css, "highlight")
+            else:
+                result["css"] += document.html.prefix + "CSS\n"
     for name in dict.fromkeys([*options.stylesheets, *values(page.data.get("stylesheets"))]):
         if re.match(r"[\w+.-]+:|//", name):
             result["stylesheets"].append(name)

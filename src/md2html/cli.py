@@ -66,28 +66,15 @@ def parser():
     result.add_argument(
         "--output-mode", choices=MODES, help="default: site for directory inputs, pages for listed files"
     )
-    result.add_argument(
-        "--jekyll",
-        dest="output_mode",
-        action="store_const",
-        const="jekyll",
-        help="shortcut for --output-mode jekyll",
-    )
-    result.add_argument(
-        "--jekyll-markdown",
-        dest="output_mode",
-        action="store_const",
-        const="jekyll-markdown",
-        help="shortcut for --output-mode jekyll-markdown",
-    )
     result.add_argument("--assets", choices=ASSETS)
-    result.add_argument(
-        "--standalone",
-        dest="assets",
-        action="store_const",
-        const="standalone",
-        help="shortcut for --assets standalone",
-    )
+    for name, option in (("jekyll", "output-mode"), ("jekyll-markdown", "output-mode"), ("standalone", "assets")):
+        result.add_argument(
+            "--" + name,
+            dest=option.replace("-", "_"),
+            action="store_const",
+            const=name,
+            help=f"shortcut for --{option} {name}",
+        )
     result.add_argument("--math", choices=BACKENDS)
     result.add_argument("--math-fonts", choices=FONTS)
     result.add_argument("--template")
@@ -252,13 +239,14 @@ def main(argv=None):
             print(path.read_text())
             return 0
         examples = {
-            "config": json.dumps(EXAMPLE, indent=2) + "\n",
-            "template": (PACKAGE / "default_templates/page.html").read_text(),
-            "css": (PACKAGE / "assets/page-base.css").read_text(),
+            "config": None,
+            "template": PACKAGE / "default_templates/page.html",
+            "css": PACKAGE / "assets/page-base.css",
         }
-        for name, text in examples.items():
+        for name, path in examples.items():
             destination = args.pop("example_" + name)
             if destination:
+                text = path.read_text() if path else json.dumps(EXAMPLE, indent=2) + "\n"
                 if destination == "-":
                     print(text, end="")
                 else:

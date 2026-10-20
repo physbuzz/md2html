@@ -471,7 +471,7 @@ class Build:
                 "md2html.math_stylesheets and "
                 "md2html.math_css (see --example-template -)"
             )
-        return assets.prune_highlighting(self, document, body)
+        return assets.finish_highlighting(self, document, body)
 
     def feed(self):
         namespace = "http://www.w3.org/2005/Atom"

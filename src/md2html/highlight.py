@@ -48,21 +48,18 @@ class HighlightUsage(HTMLParser):
             r"(?:\s+\.(?P<token>[\w-]+))?"
         )
 
-        def needed(value):
-            match = selector.fullmatch(value.strip())
-            if not match:
-                return True
-            scope = match["scope"]
-            if scope:
-                language = "regular" if scope.startswith(":not") else "wolfram"
-                if language not in self.scopes:
-                    return False
-            return match["token"] is None or match["token"] in self.classes
-
         def rule(match):
-            if any(not selector.fullmatch(value.strip()) for value in match[1].split(",")):
-                return match[0]
-            selectors = [value.strip() for value in match[1].split(",") if needed(value)]
+            selectors = []
+            for value in match[1].split(","):
+                parsed = selector.fullmatch(value.strip())
+                if not parsed:
+                    return match[0]
+                if parsed["scope"]:
+                    language = "regular" if parsed["scope"].startswith(":not") else "wolfram"
+                    if language not in self.scopes:
+                        continue
+                if parsed["token"] is None or parsed["token"] in self.classes:
+                    selectors.append(value.strip())
             return ", ".join(selectors) + " {" + match[2] + "}" if selectors else ""
 
         # These are generated theme styles, never user-authored stylesheets.
@@ -95,15 +92,18 @@ class Highlighter:
 
     @staticmethod
     def themed(light_css, dark_css):
+        def scope(css, selector):
+            return selector + " {\n" + css + "\n}\n"
+
         return (
             "@media (prefers-color-scheme: light) {\n"
-            + light_css.replace(".codehilite", 'html:not([data-theme="dark"]) .codehilite')
-            + "\n}\n"
+            + scope(light_css, 'html:not([data-theme="dark"])')
+            + "}\n"
             + "\n@media (prefers-color-scheme: dark) {\n"
-            + dark_css.replace(".codehilite", 'html:not([data-theme="light"]) .codehilite')
-            + "\n}\n"
-            + light_css.replace(".codehilite", 'html[data-theme="light"] .codehilite')
-            + dark_css.replace(".codehilite", 'html[data-theme="dark"] .codehilite')
+            + scope(dark_css, 'html:not([data-theme="light"])')
+            + "}\n"
+            + scope(light_css, 'html[data-theme="light"]')
+            + scope(dark_css, 'html[data-theme="dark"]')
         )
 
     def css_for(self, body):

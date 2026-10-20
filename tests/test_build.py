@@ -59,6 +59,7 @@ def test_missing_and_cyclic_includes_warn(cli, put, tmp_path):
     result = cli("a.md")
     assert "cycle" in result.stderr
     assert "Still here" in (tmp_path / "a.html").read_text()
+    assert len(soup(tmp_path / "a.html").select("aside.warning")) == 2
 
 
 @pytest.mark.parametrize("text", ["---\n[bad]\n---\ntext", "---\ntitle: [bad\n---\nx", "---\ntitle: x"])

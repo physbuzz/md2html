@@ -42,6 +42,7 @@ class Stash:
     def __init__(self):
         self.prefix = "MD2HTML" + uuid.uuid4().hex.upper()
         self.items = {}
+        self.pattern = re.compile(self.prefix + r"X[0-9]+Z")
 
     def put(self, value):
         token = self.prefix + "X" + str(len(self.items)) + "Z"
@@ -49,8 +50,9 @@ class Stash:
         return token
 
     def restore(self, text):
-        for token, value in reversed(self.items.items()):
-            text = text.replace(token, value)
+        # Expand all placeholders in each nesting level together.
+        while self.pattern.search(text):
+            text = self.pattern.sub(lambda m: self.items[m[0]], text)
         return text
 
 
@@ -152,7 +154,7 @@ class Document:
                         value = path.read_text()
                     except OSError as error:
                         message = f"could not read {local_path(path)}: {error.strerror or error}"
-                        self.warn(message)
+                        self.warn(message, at_end=False)
                         result.append(self.block(f'<aside class="warning">{html.escape(message)}</aside>'))
                         continue
                     if kind == "src":
@@ -183,6 +185,24 @@ class Document:
                     )
                 result.append(line)
         return "".join(result)
+
+    def block_code(self, code, info=None):
+        self.features.add("code")
+        language = info.split()[0] if info else ""
+        # Raw HTML occurring in Markdown code blocks is source text, not a macro.
+        code = self.html.pattern.sub(
+            lambda m: self.html.items[m[0]] if m[0] in self.literal_html else m[0],
+            code,
+        )
+        # Directives are macros even inside a fence; render the intervening code normally.
+        chunks = re.split(f"({self.html.pattern.pattern})", code)
+        return "".join(
+            chunk
+            if chunk in self.html.items
+            else self.build.highlighter.code(chunk, language, True)
+            for chunk in chunks
+            if chunk.strip()
+        )
 
     def protect_code(self, body, protected):
         literal = re.compile(
@@ -253,9 +273,12 @@ class Document:
 
     def toc(self, headings):
         roots, exercises = [], []
+        has_exercise_section = False
         stack = [(0, roots)]
         for level, title, identifier in headings:
             plain = html.unescape(re.sub(r"<[^>]+>", "", title)).lower()
+            if plain == "exercises":
+                has_exercise_section = True
             if plain == "solution":
                 continue
             link = f'<a href="#{identifier}">{title}</a>'
@@ -280,15 +303,7 @@ class Document:
                 items.append("<li>" + link + extra + (listing(children) if children else "") + "</li>")
             return '<ul class="toc-list">' + "".join(items) + "</ul>"
 
-        tail = (
-            exercise_list
-            if exercises
-            and not any(
-                html.unescape(re.sub(r"<[^>]+>", "", title)).lower() == "exercises"
-                for _, title, _ in headings
-            )
-            else ""
-        )
+        tail = exercise_list if exercises and not has_exercise_section else ""
         return '<div class="table-of-contents"><h2>Directory</h2>' + listing(roots) + tail + "</div>"
 
     def render(self, context):
