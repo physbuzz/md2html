@@ -5,16 +5,15 @@ import re
 import uuid
 from dataclasses import replace
 
-import mistune
 import yaml
 from liquid.exceptions import LiquidError
 
 from . import execution
+from .markdown import FENCE, Renderer, fenced_blocks
 from .reporting import ExecutionWarning, local_path
 
 DIRECTIVE = re.compile(r"^\s*@(src-begin|src|include)\((.*?)\)\s*(?:#.*)?$")
 END = re.compile(r"^\s*@src-end\s*(?:#.*)?$")
-FENCE = re.compile(r"^( {0,3})(`{3,}|~{3,})([^\n]*)\n", re.M)
 MATH = re.compile(
     r"(?<!\\)\$\$(.+?)(?<!\\)\$\$|(?<![\\$])\$(?!\$)([^\n]+?)(?<!\\)\$(?!\$)|"
     r"\\begin\{(align\*?|gather\*?|multline\*?|equation\*?)\}.*?\\end\{\3\}",
@@ -64,45 +63,13 @@ def liquid_render(environment, text, context, warn):
         return text
 
 
-class Renderer(mistune.HTMLRenderer):
-    def __init__(self, document):
-        super().__init__(escape=False)
-        self.document = document
-        self.headings = []
-        self.seen = {}
-
-    def heading(self, text, level, **attrs):
-        base = slugify(self.document.html.restore(text))
-        number = self.seen.get(base, 0) + 1
-        self.seen[base] = number
-        identifier = base if number == 1 else f"{base}-{number}"
-        self.headings.append((level, self.document.html.restore(text), identifier))
-        return f'<h{level} id="{identifier}">{text}</h{level}>\n'
-
-    def block_code(self, code, info=None):
-        self.document.features.add("code")
-        language = (info or "").split()[0] if info else ""
-        # Directives are macros even inside a fence; render the intervening code normally.
-        chunks = re.split(f"({self.document.html.prefix}X[0-9]+Z)", code)
-        return "".join(
-            chunk
-            if chunk in self.document.html.items
-            else self.document.build.highlighter.code(chunk, language, True)
-            for chunk in chunks
-            if chunk.strip()
-        )
-
-    def image(self, text, url, title=None):
-        self.document.features.add("image")
-        return super().image(text, url, title)
-
-
 class Document:
     def __init__(self, build, page):
         self.build = build
         self.options = build.options
         self.page = page
         self.html = Stash()
+        self.literal_html = set()
         self.features = set()
         self.fonts = set()
         self.warnings = []
@@ -218,33 +185,32 @@ class Document:
         return "".join(result)
 
     def protect_code(self, body, protected):
-        position = 0
-        output = []
-        while match := FENCE.search(body, position):
+        literal = re.compile(
+            r"(?P<fence>" + FENCE.pattern + r")|"
+            r"<(?P<tag>pre|code)\b[^>]*>.*?</(?P=tag)>|<!--.*?-->|"
+            r"{%\s*highlight\s+(?P<language>\S+)\s*%}(?P<code>.*?){%\s*endhighlight\s*%}|"
+            r"(?P<ticks>`+)(?!`)(.+?)(?<!`)(?P=ticks)(?!`)",
+            re.S | re.I | re.M,
+        )
+        position, output = 0, []
+        # Consume the outer literal first: HTML inside fences and fences inside HTML stay literal.
+        while match := literal.search(body, position):
             output.append(body[position : match.start()])
-            close = re.compile(
-                r"^ {0,3}" + re.escape(match[2][0]) + "{" + str(len(match[2])) + r",}[ \t]*$", re.M
-            )
-            end = close.search(body, match.end())
-            stop = end.end() if end else len(body)
-            output.append("\n\n" + protected.put(body[match.start() : stop]) + "\n\n")
+            stop = match.end()
+            if match["fence"]:
+                _, _, stop = next(fenced_blocks(body, match.start()))
+                value = "\n\n" + protected.put(body[match.start() : stop]) + "\n\n"
+            elif match["language"] and not self.options.markdown_mode:
+                value = self.block(self.build.highlighter.code(match["code"], match["language"], True))
+            elif match["tag"]:
+                value = self.html.put(match[0])
+                self.literal_html.add(value)
+            else:
+                value = protected.put(match[0])
+            output.append(value)
             position = stop
         output.append(body[position:])
         body = "".join(output)
-
-        def literal(match):
-            if match["language"] and not self.options.markdown_mode:
-                return self.block(self.build.highlighter.code(match["code"], match["language"], True))
-            return protected.put(match[0])
-
-        body = re.sub(
-            r"<(pre|code)\b[^>]*>.*?</\1>|<!--.*?-->|"
-            r"{%\s*highlight\s+(?P<language>\S+)\s*%}(?P<code>.*?){%\s*endhighlight\s*%}",
-            literal,
-            body,
-            flags=re.S | re.I,
-        )
-        body = re.sub(r"(`+)(?!`)(.+?)(?<!`)\1(?!`)", lambda m: protected.put(m[0]), body, flags=re.S)
         # A display may contain indented TeX lines; only shield indentation outside math.
         body = re.sub(
             MATH.pattern + r"|(?P<indented>(?:^(?: {4}|\t)[^\n]*(?:\n|$))+)",
@@ -344,14 +310,21 @@ class Document:
         ):
             body = liquid_render(self.build.liquid, body, context, self.warn)
         body = protected.restore(body)
-        renderer = Renderer(self)
-        plugins = [] if self.options.markdown_mode else ["table", "strikethrough", "task_lists", "url"]
-        rendered = mistune.create_markdown(renderer=renderer, plugins=plugins)(body)
+        renderer = Renderer(self, slugify)
+        rendered = renderer.render(body)
         if not self.options.markdown_mode:
             body = rendered
         self.html.items[self.toc_token] = self.toc(renderer.headings)
         # Block macros must not be wrapped in paragraph elements by Markdown.
-        body = re.sub(r"<p>(" + self.html.prefix + r"X[0-9]+Z)</p>", r"\1", body)
+        body = re.sub(
+            r"<p>(" + self.html.prefix + r"X[0-9]+Z)</p>",
+            lambda m: (
+                m[0]
+                if m[1] in self.literal_html and re.match(r"<code\b", self.html.items[m[1]], re.I)
+                else m[1]
+            ),
+            body,
+        )
         body = self.html.restore(body)
         if self.warnings:
             body += "".join(

@@ -1,5 +1,7 @@
 import json
+import os
 import re
+import shlex
 import socket
 import subprocess
 import sys
@@ -24,9 +26,11 @@ def until(check, timeout=12):
 
 @contextmanager
 def watching(tmp_path, *arguments):
+    command = os.environ.get("MD2HTML_TEST_COMMAND")
+    command = shlex.split(command) if command else [sys.executable, "-m", "md2html"]
     with (tmp_path / ".watch.log").open("w") as log:
         process = subprocess.Popen(
-            [sys.executable, "-m", "md2html", *map(str, arguments)],
+            [*command, *map(str, arguments)],
             cwd=tmp_path,
             stdout=log,
             stderr=subprocess.STDOUT,

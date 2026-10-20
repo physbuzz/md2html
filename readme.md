@@ -247,7 +247,9 @@ Sizes for `examples/notes.md` (eight equations, no figures, execution enabled), 
 
 ### Templates and Liquid
 
-Markdown is run through python-liquid, then rendered with Mistune. YAML frontmatter is optional; useful keys are `title`, `template`, `layout`, `css`, `stylesheets`, `feature_css`, `permalink`, `slug`, `date`, and `tags`. Set `render_with_liquid: false` in frontmatter or pass `--no-liquid` to leave Liquid in the source untouched; templates and layouts always render. HTML, HTM, and XML inputs get Liquid only, with no Markdown or directives.
+Markdown is run through python-liquid, then rendered with Python-Markdown. YAML frontmatter is optional; useful keys are `title`, `template`, `layout`, `css`, `stylesheets`, `feature_css`, `permalink`, `slug`, `date`, and `tags`. Set `render_with_liquid: false` in frontmatter or pass `--no-liquid` to leave Liquid in the source untouched; templates and layouts always render. HTML, HTM, and XML inputs get Liquid only, with no Markdown or directives.
+
+Tables, strikethrough, task lists, and automatic URL links are supported.
 
 ### Templates, layouts, and CSS
 
