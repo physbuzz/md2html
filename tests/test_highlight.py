@@ -5,9 +5,84 @@ import re
 import pytest
 import rcssmin
 from bs4 import BeautifulSoup
+from pygments.token import Comment, Error, Keyword, Name, String
 
 from md2html.config import Options
 from md2html.highlight import Highlighter, HighlightUsage
+from md2html.metamath import MetamathLexer
+
+METAMATH = """$( A comment containing $p and <html>,
+   continued on another line. $)
+$[ axioms.mm $]
+$c wff |- ( ) -> $.
+$v ph ps $.
+${
+  $d ph ps $.
+  wph $f wff ph $.
+  h $e |- ph $.
+  ax $a |- ( ph -> ph ) $.
+  ordinary $p |- ph $= wph h $.
+  compressed $p |- ph $= ( wph h ) ABZC $.
+$}
+"""
+
+
+def test_metamath_tokens():
+    tokens = list(MetamathLexer().get_tokens(METAMATH))
+    assert "".join(value for _, value in tokens) == METAMATH
+    assert not any(token in Error for token, _ in tokens)
+    comments = "".join(value for token, value in tokens if token in Comment.Multiline)
+    assert "$p and <html>,\n   continued on another line." in comments
+    assert {value for token, value in tokens if token in Keyword} == {
+        "$c", "$v", "$d", "$f", "$e", "$a", "$p", "$=",
+    }
+    assert (String, "axioms.mm") in tokens
+    assert (Name.Label, "ordinary") in tokens
+    assert (Name.Label, "wph") in tokens
+    assert (String.Other, "ABZC") in tokens
+
+
+def test_metamath_blocks_have_independent_state():
+    highlighter = Highlighter(Options())
+    try:
+        highlighter.code("$( unfinished comment", "mm")
+        body = highlighter.code("$c wff $.", "mm")
+        doc = BeautifulSoup(body, "html.parser")
+        assert doc.select_one(".k").text == "$c"
+        assert not doc.select(".cm")
+    finally:
+        highlighter.close()
+
+
+def test_metamath_filename_default_and_explicit_override():
+    highlighter = Highlighter(Options())
+    try:
+        body = highlighter.code("$c wff $.", filename="proof.mm")
+        assert 'data-language="metamath"' in body
+        assert '<span class="k">$c</span>' in body
+        body = highlighter.code("int value;", "objective-c++", filename="example.mm")
+        assert 'data-language="objective-c++"' in body
+        assert '<span class="kt">int</span>' in body
+    finally:
+        highlighter.close()
+
+
+def test_metamath_rendering(cli, put, tmp_path):
+    put("proof.mm", METAMATH)
+    put(
+        "a.md",
+        f"```metamath\n{METAMATH}```\n\n```mm\n{METAMATH}```\n\n"
+        f"@src(proof.mm, noexecute)\n\n@src-begin(mm, noexecute)\n{METAMATH}@src-end\n",
+    )
+    cli("a.md", "--math", "raw")
+    doc = BeautifulSoup((tmp_path / "a.html").read_text(), "html.parser")
+    blocks = doc.select('.codehilite[data-language="metamath"]')
+    assert len(blocks) == 4
+    for block in blocks:
+        assert block.select_one("code").text == METAMATH
+        assert block.select_one(".k").text == "$c"
+        assert block.select_one(".sx").text == "ABZC"
+        assert not block.select("html")
 
 
 def stylesheet(path):
@@ -23,6 +98,8 @@ def test_subset_preserves_every_matching_rule(request, backend, style):
     try:
         body = highlighter.code('int main() { return 42; } // comment\n"text"', "cpp")
         body += highlighter.code('f[x_] := Module[{local}, Sin[x] + 42]; "text"', "wl")
+        if backend == "pygments":
+            body += highlighter.code(METAMATH, "mm")
         doc = BeautifulSoup(body, "html.parser")
         usage = HighlightUsage(body)
         for original in (highlighter.light_css, highlighter.dark_css):

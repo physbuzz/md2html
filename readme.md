@@ -47,6 +47,8 @@ Renderer dependencies:
 - **Rouge syntax highlighting** (optional, `--highlighter rouge`): install Ruby, then `gem install --user-install rouge`.
 - **MathJax**: `make install` bundles its npm packages. Static CommonHTML also requires Node.js. For a Python-package installation, run `npm install mathjax@4.1.3 @mathjax/mathjax-tex-font@4.1.3 @mathjax/mathjax-newcm-font@4.1.3` in your project directory or a parent folder.
 
+.mm defaults to Metamath syntax highlighting.
+
 ## CLI
 
 Examples:

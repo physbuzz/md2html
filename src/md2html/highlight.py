@@ -15,6 +15,7 @@ from pygments.util import ClassNotFound
 from .config import PACKAGE
 from .execution import ALIASES
 from .highlight_styles import WolframDarkStyle, WolframLightStyle
+from .metamath import MetamathLexer
 from .workers import Worker
 
 
@@ -125,12 +126,18 @@ class Highlighter:
 
     def code(self, value, language="", fenced=False, filename=None):
         language = ALIASES.get(language.lower(), language.lower())
-        if filename:
+        if language in MetamathLexer.aliases:
+            language = "metamath"
+        if filename and language != "metamath":
             try:
                 get_lexer_by_name(language)
             except ClassNotFound:
                 try:
-                    language = get_lexer_for_filename(str(filename)).aliases[0]
+                    language = (
+                        "metamath"
+                        if str(filename).lower().endswith(".mm")
+                        else get_lexer_for_filename(str(filename)).aliases[0]
+                    )
                 except ClassNotFound:
                     pass
         if self.worker:
@@ -138,9 +145,12 @@ class Highlighter:
         else:
             if language not in self.lexers:
                 try:
-                    lexer = (
-                        WolframLexer() if language in WolframLexer.aliases else get_lexer_by_name(language)
-                    )
+                    if language == "metamath":
+                        lexer = MetamathLexer()
+                    elif language in WolframLexer.aliases:
+                        lexer = WolframLexer()
+                    else:
+                        lexer = get_lexer_by_name(language)
                 except ClassNotFound:
                     lexer = TextLexer()
                     if language and self.diagnostic:
