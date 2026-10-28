@@ -28,7 +28,7 @@ where = ["src"]
 version = {attr = "md2html.__version__"}
 
 [tool.setuptools.package-data]
-md2html = ["assets/*.css", "default_templates/*.html", "scripts/*.mjs", "scripts/*.rb"]
+md2html = ["assets/*.css", "assets/*.js", "default_templates/*.html", "scripts/*.mjs", "scripts/*.rb"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -176,3 +176,94 @@ def test_indented_html_is_code_and_raw_inline_code_keeps_its_paragraph(cli, put,
     assert doc.select_one(".codehilite pre code").text == "<pre>*literal*</pre>\n\n<code>**literal**</code>\n"
     assert doc.select_one("article > p > code").text == "*literal*"
     assert not doc.select("pre pre, pre em, pre strong")
+
+
+def test_footnotes_number_references_and_preserve_rich_definitions(cli, put, tmp_path):
+    put("page.md", "First[^later], second[^1], repeated[^later], missing[^missing].\n\n"
+        "[^1]: Definition one with `code`.\n\n"
+        "[^later]: A **bold** note with [a link](https://example.test) and $x^2$.\n\n"
+        "    Second paragraph with *emphasis*.\n")
+    cli("page.md", "--math", "mathml")
+    doc = read_html(tmp_path / "page.html")
+    refs = doc.select("a.footnote-ref")
+    assert [ref.text for ref in refs] == ["1", "2", "1"]
+    assert refs[0]["href"] == refs[2]["href"]
+    assert len({ref.parent["id"] for ref in refs}) == 3
+    for ref in refs:
+        note = doc.find(id=ref["href"][1:])
+        assert note is not None
+        assert note.select_one(f'a.footnote-backref[href="#{ref.parent["id"]}"]')
+    assert doc.select_one(".footnote strong").text == "bold"
+    assert doc.select_one(".footnote math")
+    assert doc.select_one(".footnote code").text == "code"
+    assert "[^missing]" in doc.text
+    assert "footnote-tooltip" in doc.select_one("style").text
+    assert any("function setup()" in script.text for script in doc.select("script"))
+
+
+@pytest.mark.parametrize("kind", ["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"])
+def test_github_alerts_keep_block_content(cli, put, tmp_path, kind):
+    put("page.md", f"> [!{kind}]\n> A **bold** message with a [link](https://example.test).\n>\n"
+        "> - One\n> - Two\n>\n> Another paragraph.[^1]\n\n[^1]: A footnote.\n")
+    cli("page.md", "--math", "raw")
+    doc = read_html(tmp_path / "page.html")
+    alert = doc.select_one(f".markdown-alert-{kind.lower()}")
+    assert alert.select_one(".markdown-alert-title").text == kind.capitalize()
+    assert alert.select_one("strong").text == "bold"
+    assert len(alert.select("li")) == 2
+    assert alert.select_one("a.footnote-ref")
+    assert f"[!{kind}]" not in alert.text
+    assert not doc.select("aside.warning")
+
+
+def test_footnotes_and_alerts_leave_literals_and_export_intact(cli, put, tmp_path):
+    body = ("`[^1]` and `> [!NOTE]`\n\n```text\n[^1]: literal\n> [!WARNING]\n```\n\n"
+            "> Ordinary quote\n\n> [!UNKNOWN]\n> Still a quote\n\n"
+            "Actual[^1].\n\n[^1]: The note.\n\n> [!NOTE]\n> The alert.\n")
+    put("page.md", body)
+    cli("page.md", "--math", "raw")
+    doc = read_html(tmp_path / "page.html")
+    assert len(doc.select(".markdown-alert")) == 1
+    assert "Ordinary quote" in doc.select_one("blockquote").text
+    assert "[!UNKNOWN]" in doc.select_one("blockquote").text
+    assert len(doc.select(".footnote-ref")) == 1
+    assert "[^1]: literal\n> [!WARNING]" in doc.select_one("pre code").text
+    cli("page.md", "--jekyll-markdown", "-o", "export.md", "--math", "raw")
+    exported = (tmp_path / "export.md").read_text()
+    for block in body.strip().split("\n\n"):
+        assert block in exported
+    assert "footnote-tooltip" not in exported and "markdown-alert" not in exported
+
+
+def test_adjacent_alerts_and_quotes_remain_separate(cli, put, tmp_path):
+    put("page.md", "> Plain before\n\n> [!NOTE]\n> First\n\n> [!WARNING]\n> Second\n\n> Plain after\n")
+    cli("page.md", "--math", "raw")
+    doc = read_html(tmp_path / "page.html")
+    assert [node.get_text(" ", strip=True) for node in doc.select(".markdown-alert")] == [
+        "Note First", "Warning Second",
+    ]
+    assert [node.text.strip() for node in doc.select("blockquote")] == ["Plain before", "Plain after"]
+
+
+def test_footnote_in_heading_does_not_duplicate_reference_in_toc(cli, put, tmp_path):
+    put("page.md", "@toc\n\n# A heading[^1]\n\n[^1]: Heading note.\n")
+    cli("page.md", "--math", "raw")
+    doc = read_html(tmp_path / "page.html")
+    assert doc.select_one("h1#a-heading .footnote-ref")
+    assert doc.select_one('.table-of-contents a[href="#a-heading"]').text == "A heading"
+    assert not doc.select(".table-of-contents .footnote-ref")
+    ids = [node["id"] for node in doc.select("[id]")]
+    assert len(ids) == len(set(ids))
+
+
+def test_new_feature_assets_are_conditional_and_shared(cli, put, tmp_path):
+    put("site/plain.md", "Plain page")
+    put("site/notes.md", "Note[^1].\n\n[^1]: Footnote.\n\n> [!TIP]\n> Helpful.\n")
+    cli("site", "-o", "public", "--math", "raw")
+    plain = read_html(tmp_path / "public/plain.html")
+    notes = read_html(tmp_path / "public/notes.html")
+    assert not any("footnote" in str(node) or "alert.css" in str(node) for node in plain.select("link, script"))
+    assert notes.select_one('link[href="assets/footnote.css"]')
+    assert notes.select_one('link[href="assets/alert.css"]')
+    assert (tmp_path / "public/assets/footnote.css").is_file()
+    assert (tmp_path / "public/assets/alert.css").is_file()

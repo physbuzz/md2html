@@ -1,8 +1,11 @@
 """Python-Markdown hooks for code highlighting and document navigation."""
 
 import re
+from xml.etree import ElementTree as ET
 
 from markdown import Markdown
+from markdown.blockprocessors import BlockQuoteProcessor
+from markdown.extensions.footnotes import FootnoteExtension
 from markdown.extensions.tables import TableExtension
 from markdown.preprocessors import Preprocessor
 from markdown.treeprocessors import Treeprocessor
@@ -53,10 +56,13 @@ class Renderer(Treeprocessor):
             DeleteSubExtension(subscript=False),
             TasklistExtension(),
             MagiclinkExtension(),
+            FootnoteExtension(USE_DEFINITION_ORDER=False),
         ]
         super().__init__(Markdown(extensions=extensions, output_format="html"))
         self.md.preprocessors.register(FencedCode(self.md, self), "md2html_fences", 35)
         self.md.treeprocessors.register(self, "md2html", -5)
+        if not document.options.markdown_mode:
+            self.md.parser.blockprocessors.register(Alerts(self.md.parser, document), "md2html_alerts", 25)
         self.document = document
         self.slugify = slugify
         self.headings = []
@@ -76,6 +82,9 @@ class Renderer(Treeprocessor):
                 node.tail = tail
             elif node.tag == "img":
                 self.document.features.add("image")
+            elif node.tag == "a" and node.get("class") == "footnote-ref":
+                self.document.features.add("footnote")
+                node.set("aria-label", f"Footnote {node.text}")
             elif re.fullmatch(r"h[1-6]", node.tag):
                 tail, node.tail = node.tail, None
                 text = self.md.serializer(node).split(">", 1)[1].rsplit("</", 1)[0]
@@ -86,6 +95,13 @@ class Renderer(Treeprocessor):
 
     def heading(self, text, level):
         text = self.document.html.restore(text)
+        # Footnote references belong to the heading, not to its navigation link.
+        text = re.sub(
+            r"<sup\b[^>]*>.*?</sup>",
+            lambda match: "" if 'class="footnote-ref"' in match[0] else match[0],
+            text,
+            flags=re.S,
+        )
         base = self.slugify(text)
         number = self.seen.get(base, 0) + 1
         self.seen[base] = number
@@ -95,3 +111,28 @@ class Renderer(Treeprocessor):
 
     def render(self, body):
         return self.md.convert(body)
+
+
+class Alerts(BlockQuoteProcessor):
+    """Parse each alert as its own block, including quoted blank lines."""
+
+    MARKER = re.compile(r"^ {0,3}> ?\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*(?:\n|$)")
+
+    def __init__(self, parser, document):
+        super().__init__(parser)
+        self.document = document
+
+    def test(self, parent, block):
+        return bool(self.MARKER.match(block)) and super().test(parent, block)
+
+    def run(self, parent, blocks):
+        block = blocks.pop(0)
+        match = self.MARKER.match(block)
+        kind = match[1].lower()
+        node = ET.SubElement(parent, "div", {"class": f"markdown-alert markdown-alert-{kind}"})
+        ET.SubElement(node, "p", {"class": "markdown-alert-title"}).text = kind.capitalize()
+        body = "\n".join(self.clean(line) for line in block[match.end():].split("\n"))
+        self.parser.state.set("blockquote")
+        self.parser.parseChunk(node, body)
+        self.parser.state.reset()
+        self.document.features.add("alert")

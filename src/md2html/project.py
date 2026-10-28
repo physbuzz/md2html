@@ -474,32 +474,53 @@ class Build:
         return assets.finish_highlighting(self, document, body)
 
     def feed(self):
+        site_url = str(self.site.get("url", "")).rstrip("/")
+        parsed = urlsplit(site_url)
+        if (
+            parsed.scheme not in {"http", "https"} or not parsed.netloc
+            or parsed.query or parsed.fragment or re.search(r"\s", site_url)
+        ):
+            raise ValueError("feed generation requires an absolute http(s) site.url without a query or fragment")
         namespace = "http://www.w3.org/2005/Atom"
         ET.register_namespace("", namespace)
         root = ET.Element("{" + namespace + "}feed")
 
         def field(parent, name, value):
-            ET.SubElement(parent, "{" + namespace + "}" + name).text = str(value)
+            # XML 1.0 cannot represent control characters, even as character references.
+            text = re.sub(r"[^\x09\x0a\x0d\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]", "\ufffd", str(value))
+            ET.SubElement(parent, "{" + namespace + "}" + name).text = text
 
         def absolute(url):
-            return str(self.site.get("url", "")).rstrip("/") + self.relative_url(url)
+            return quote(site_url + self.relative_url(url), safe="/:@%?=&+#")
 
         field(root, "title", self.site.get("title", self.source_root.name))
-        posts = self.site["posts"][:20]
-
         def timestamp(value):
-            date = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-            return (date if date.tzinfo else date.replace(tzinfo=timezone.utc)).isoformat()
+            try:
+                date = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            except ValueError as error:
+                raise ValueError(f"invalid feed date {value!r}; use an ISO 8601 date or timestamp") from error
+            date = date if date.tzinfo else date.replace(tzinfo=timezone.utc)
+            if date.utcoffset().total_seconds() % 60:
+                raise ValueError(f"invalid feed date {value!r}; timezone offsets must use whole minutes")
+            return date
+
+        posts = sorted(self.site["posts"], key=lambda post: timestamp(post["date"]), reverse=True)[:20]
+        updated = max(
+            (timestamp(post.get("updated", post["date"])) for post in posts),
+            default=None,
+        )
+        if updated is None:
+            updated = max(
+                (timestamp(page.get("updated", page["date"])) for page in self.site["pages"]),
+                default=timestamp("1970-01-01"),
+            )
 
         field(root, "id", absolute("/feed.xml"))
-        ET.SubElement(root, "{" + namespace + "}link", rel="self", href=absolute("/feed.xml"))
-        field(
-            root,
-            "updated",
-            timestamp(posts[0]["date"])
-            if posts
-            else timestamp(max((p["date"] for p in self.site["pages"]), default="1970-01-01")),
+        ET.SubElement(
+            root, "{" + namespace + "}link", rel="self", type="application/atom+xml", href=absolute("/feed.xml")
         )
+        ET.SubElement(root, "{" + namespace + "}link", rel="alternate", href=absolute("/"))
+        field(root, "updated", updated.isoformat())
         author = self.site.get("author") or self.site["title"]
         author = author if isinstance(author, dict) else {"name": author}
         node = ET.SubElement(root, "{" + namespace + "}author")
@@ -512,11 +533,12 @@ class Build:
             for key, value in dict(
                 title=post["title"],
                 id=absolute(post["url"]),
-                updated=timestamp(post["date"]),
+                published=timestamp(post["date"]).isoformat(),
+                updated=timestamp(post.get("updated", post["date"])).isoformat(),
             ).items():
                 field(entry, key, value)
-            ET.SubElement(entry, "{" + namespace + "}link", href=absolute(post["url"]))
-        return ET.tostring(root, encoding="unicode")
+            ET.SubElement(entry, "{" + namespace + "}link", rel="alternate", href=absolute(post["url"]))
+        return '<?xml version="1.0" encoding="utf-8"?>\n' + ET.tostring(root, encoding="unicode") + "\n"
 
     def build(self, *, reporter=None):
         self.warnings.clear()
@@ -526,6 +548,10 @@ class Build:
         self.written.clear()
         self.dependencies.clear()
         pages, static = self.discover()
+        feed = self.output_root / "feed.xml"
+        feed_content = (
+            self.feed() if self.options.site_mode and self.options.feed and feed not in self.owners else None
+        )
         self.entrypoint = pages[0].target if self.single and pages else self.output_root
         # Validate the complete output plan before removing or writing anything.
         if self.options.clean and self.options.site_mode and self.output_root.exists():
@@ -550,8 +576,8 @@ class Build:
         self.dependencies = watched
         for source, target in static:
             self.copy(source, target)
-        feed = self.output_root / "feed.xml"
-        if self.options.site_mode and feed not in self.owners:
-            self.write(feed, self.feed(), "generated feed")
+        if feed_content is not None:
+            self.write(feed, feed_content, "generated feed")
+            state.remember_generated(feed)
         state.save()
         return self.written

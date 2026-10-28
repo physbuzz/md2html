@@ -28,6 +28,7 @@ EXAMPLE = {
     "output_mode": "site",
     "math": {"backend": "mathjax-chtml"},
     "execute": False,
+    "feed": False,
     "exclude": ["node_modules"],
     "templates": ["_templates"],
     "host": "127.0.0.1",

@@ -62,6 +62,10 @@ jobs:
           make test
       - name: Test packaged executable
         run: make test-packaged
+      - name: Test Markdown widgets in browsers
+        run: |
+          npx playwright install --with-deps chromium firefox
+          make test-browser MD2HTML="$PWD/dist/md2html"
       - name: Prepare checksummed release assets
         run: |
           version="$(.venv/bin/python -c 'from md2html import __version__; print(__version__)')"

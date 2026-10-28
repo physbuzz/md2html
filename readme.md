@@ -94,7 +94,7 @@ Configuration can be done via CLI or via a config file `md2html.json`. All CLI o
 - `--assets MODE`: `shared`, `standalone`, or `cdn` asset placement (see Math below). JSON: `"assets"`.
 - `--standalone`: Shortcut for `--assets standalone`.
 - `--no-default-css`: omit base and feature CSS; keep authored stylesheets and required math-renderer styles. JSON: `"css": []` plus `"feature_css": false`.
-- `--no-feature-css`: omit generated CSS for code, math, tables of contents, images, and warnings. JSON: `"feature_css": false`.
+- `--no-feature-css`: omit generated CSS for code, math, tables of contents, images, warnings, footnotes, and alerts. JSON: `"feature_css": false`.
 - `--no-minify-css`: leave generated CSS readable. JSON: `"minify_css": false`.
 - `--no-liquid`: leave Liquid unchanged in source documents; templates and layouts still render. JSON: `"parse_liquid": false`.
 - `--highlighter NAME`: `pygments` (default) or `rouge`. JSON: `"highlighter"`.
@@ -132,6 +132,7 @@ Paths inside the config file are resolved relative to its directory. Restart you
 |`input`|Markdown file, source directory, or a list of inputs.|
 |`exclude`|Skip matching source paths. Exact paths, directory prefixes, and patterns are accepted.|
 |`frontmatter`|Default front matter for Jekyll Markdown output. Source front matter wins.|
+|`feed`|Generate an Atom feed in `site` or `jekyll` mode (default `false`). Requires an absolute HTTP(S) `site.url`.|
 |`paginate`|Site variable giving the visible posts per paginated index page (`index.html` or `index.md`, including nested indexes).|
 |`paginate_path`|Site variable giving the later-page URL; must contain `:num`. Default `/page:num/`. For `blog/index.html`, use a path below `/blog/`, such as `/blog/page:num/`.|
 |`images.embed`|Embed local media in standalone pages (default `true`); website assets stay shared.|
@@ -146,6 +147,10 @@ There are three pieces to html generation in md2html:
 1. md2html custom directives, which start with `@` and are how you can include and compile/execute external code snippets
 2. Liquid templating
 3. Markdown rendering
+
+### Footnotes and alerts
+
+Markdown footnotes are supported (`[^1]` and later `[^1]: ...`), as well as Github style "alert" blockquotes (`> [!NOTE]`, or `TIP`, `IMPORTANT`, `WARNING`, and `CAUTION`).
 
 ### md2html Directives
 These are most of the point of this whole project. `@` directives go on their own line and may carry a trailing `# comment`. The implemented custom directives are:
@@ -274,7 +279,7 @@ Native `site` mode provides pages, posts, layouts, includes, tags, categories, p
 - `hidden: true` drops a post from pagination but keeps it in collections and feeds. In Jekyll mode, `published: false` excludes a document, and ordinary pages without frontmatter are copied unchanged; `_posts` files are still rendered. Native pages need no frontmatter.
 - `site.posts`, `site.tags`, and `site.categories` index `_posts`. `site.pages` holds every discovered page in native mode; `--jekyll` leaves posts out of it, as Jekyll does.
 - `site.title` defaults to the source directory's name. Posts get an `id` from their URL.
-- Site builds write `/feed.xml` with the newest twenty posts unless an input already supplies that path. The feed uses `site.author`, either a name or an object with `name`, `email`, and `url` (or `uri`); without it, the feed uses the site title as the author.
+- Set `"feed": true` and an absolute HTTP(S) `site.url` to write `/feed.xml` with the newest twenty posts unless an input already supplies that path. The feed uses `site.author`, either a name or an object with `name`, `email`, and `url` (or `uri`); without it, the feed uses the site title as the author. Entry modification times use `updated` frontmatter, falling back to `date`.
 - `paginate` and `paginate_path` in the config paginate one `index.html`/`index.md`: the closest index above `paginate_path`. For example, `/blog/page:num/` selects `blog/index.html` if present, otherwise the root index.
 
 ### Liquid variables

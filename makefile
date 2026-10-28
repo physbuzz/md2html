@@ -2,8 +2,9 @@ PYTHON ?= .venv/bin/python
 UV ?= uv
 LOCAL_BIN ?= $(HOME)/.local/bin
 GLOBAL_BIN ?= /usr/local/bin
+MD2HTML ?= $(CURDIR)/.venv/bin/md2html
 
-.PHONY: sync test test-packaged pyinstaller install install-global clean
+.PHONY: sync check test test-browser test-packaged pyinstaller install install-global clean
 
 sync:
 	@test "$$(id -u)" != 0 || { echo "Build as a regular user; use sudo only for make install-global." >&2; exit 1; }
@@ -12,9 +13,18 @@ sync:
 test: sync
 	$(PYTHON) -m pytest -q
 
+check: sync
+	.venv/bin/ruff check src tests
+
+test-browser: sync
+	npm ci --ignore-scripts
+	node tests/markdown_browser.cjs browser-artifacts/markdown "$(MD2HTML)"
+
 test-packaged: sync
 	MD2HTML_TEST_COMMAND="$(CURDIR)/dist/md2html" $(PYTHON) -m pytest -q \
 		tests/test_packaged.py \
+		tests/test_feed.py \
+		tests/test_markdown.py \
 		tests/test_build.py::test_directives_liquid_code_and_includes \
 		tests/test_build.py::test_site_layouts_listing_pagination_and_feed \
 		tests/test_watch.py::test_restart_serve_racket_cache_and_source_updates

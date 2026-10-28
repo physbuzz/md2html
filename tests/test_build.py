@@ -373,6 +373,7 @@ def test_site_layouts_listing_pagination_and_feed(cli, put, tmp_path):
                 "output_mode": "site",
                 "math": "raw",
                 "paginate": 2,
+                "feed": True,
                 "site": {"title": "My site", "baseurl": "/blog", "url": "https://example.test"},
             }
         ),
@@ -735,6 +736,7 @@ def test_highlight_tags_inside_literal_code_stay_literal(cli, put, tmp_path):
 
 
 def test_jekyll_default_category_urls_match_index_and_feed(cli, put, tmp_path):
+    put("md2html.json", json.dumps({"feed": True, "site": {"url": "https://example.test"}}))
     put(
         "_posts/2026-07-05-example.md",
         "---\ntitle: Example\ncategories: physics math\ntags: [algebra]\n---\nContent",

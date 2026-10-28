@@ -1,0 +1,33 @@
+.footnote {
+  margin-top: 2rem;
+  font-size: .9em;
+}
+.footnote li { scroll-margin-top: 1rem; }
+.footnote li:target { background: var(--reader-soft, #f6f8fa); }
+.footnote-ref { padding: .1em .15em; }
+.footnote-tooltip {
+  position: fixed;
+  z-index: 100;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(24rem, calc(100vw - 16px));
+  max-height: min(18rem, calc(100vh - 16px));
+  overflow: auto;
+  padding: .75rem 1rem;
+  border: 1px solid var(--reader-rule, #ccc);
+  border-radius: 6px;
+  background: var(--reader-panel-bg, #fff);
+  color: var(--reader-text, #333);
+  box-shadow: 0 4px 16px rgb(0 0 0 / .2);
+  font: .9rem/1.5 var(--reader-body-font, sans-serif);
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+  text-decoration: none;
+}
+.footnote-tooltip:hover { color: var(--reader-text, #333); }
+.footnote-tooltip[hidden] { display: none; }
+.footnote-ref:focus-visible,
+.footnote-tooltip:focus-visible { outline: 2px solid var(--reader-link, #0969da); }
+@media print {
+  .footnote-tooltip { display: none; }
+}

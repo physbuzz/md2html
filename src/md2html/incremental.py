@@ -74,7 +74,7 @@ class State:
         implementation = {
             str(p.relative_to(PACKAGE)): stamp(p)
             for p in PACKAGE.rglob("*")
-            if p.suffix in {".py", ".css", ".html", ".mjs", ".rb"}
+            if p.suffix in {".py", ".css", ".html", ".js", ".mjs", ".rb"}
         }
         if getattr(sys, "frozen", False):
             implementation = {"executable": stamp(Path(sys.executable))}
@@ -115,6 +115,9 @@ class State:
             },
             outputs=[self.relative(path) for path in self.build.products],
         )
+
+    def remember_generated(self, target):
+        self.records[self.relative(target)] = dict(scope=self.scope, stamp=stamp(target))
 
     def save(self):
         for name, record in list(self.records.items()):

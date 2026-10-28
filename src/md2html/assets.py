@@ -110,7 +110,7 @@ def context(build, page, document, template):
     result.update(
         {
             "has_" + feature: feature in document.features
-            for feature in ("code", "math", "toc", "image", "warning")
+            for feature in ("code", "math", "toc", "image", "warning", "footnote", "alert")
         }
     )
     result["has_images"] = result["has_image"]
@@ -168,7 +168,7 @@ def context(build, page, document, template):
     for name in dict.fromkeys([*values(css_paths), *values(page.data.get("css"))]):
         authored(name, "css")
     if page.data.get("feature_css", options.feature_css):
-        for feature in ("code", "math", "toc", "image", "warning"):
+        for feature in ("code", "math", "toc", "image", "warning", "footnote", "alert"):
             if feature in document.features:
                 path = PACKAGE / "assets" / f"feature-{feature}.css"
                 sheet(path.read_text(), feature)

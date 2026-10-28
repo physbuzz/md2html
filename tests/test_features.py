@@ -164,7 +164,7 @@ def test_directory_defaults_to_site_and_excludes_nested_output(cli, put, tmp_pat
     assert 'src="picture.svg"' in (tmp_path / "html/index.html").read_text()
     assert (tmp_path / "html/assets/base.css").exists()
     assert (tmp_path / "html/nested/page.html").exists()
-    assert (tmp_path / "html/feed.xml").exists()
+    assert not (tmp_path / "html/feed.xml").exists()
     assert "Built 0 pages" in cli(*args).stdout
     assert not (tmp_path / "html/html").exists()
     assert (tmp_path / "html/keep.txt").read_text() == "User output file"
@@ -282,6 +282,7 @@ def test_nested_pagination_hidden_posts_and_feed_metadata(cli, put, tmp_path):
         "md2html.json",
         json.dumps(
             {
+                "feed": True,
                 "site": {
                     "paginate": 1,
                     "paginate_path": "/blog/page:num/",
@@ -615,6 +616,7 @@ def test_config_and_page_css_append_with_project_precedence(cli, put, tmp_path):
 
 
 def test_feed_limits_entries_and_preserves_offsets(cli, put, tmp_path):
+    put("md2html.json", json.dumps({"feed": True, "site": {"url": "https://example.test"}}))
     for number in range(1, 23):
         put(
             f"site/_posts/2026-01-{number:02d}-post.md",

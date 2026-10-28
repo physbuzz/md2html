@@ -31,6 +31,7 @@ class Options:
     force_execution: bool = False
     timeout: float = 120
     clean: bool = False
+    feed: bool = False
     watch: bool = False
     serve: bool = False
     host: str = "127.0.0.1"

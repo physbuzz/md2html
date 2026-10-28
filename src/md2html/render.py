@@ -8,6 +8,7 @@ import yaml
 from liquid.exceptions import LiquidError
 
 from . import execution
+from .config import PACKAGE
 from .markdown import FENCE, Renderer, fenced_blocks
 from .reporting import local_path
 
@@ -339,4 +340,6 @@ class Document:
             body += "".join(
                 f'<aside class="warning">{html.escape(warning)}</aside>' for warning in self.warnings
             )
+        if "footnote" in self.features:
+            body += "\n<script>\n" + (PACKAGE / "assets/feature-footnote.js").read_text() + "\n</script>"
         return body
