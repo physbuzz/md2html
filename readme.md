@@ -32,7 +32,7 @@ sudo make install-global
 
 `make test` runs the full regression suite from source. After `make pyinstaller`,
 `make test-packaged` checks bundled renderers, fonts, highlighting, templates,
-execution, site generation, and watch/restart behavior outside the checkout.
+execution, site generation, and incremental rebuilds outside the checkout.
 
 Prebuilt releases support Linux x86-64 with glibc 2.35 or newer. Download the executable from [GitHub Releases](https://github.com/physbuzz/md2html/releases) and install it (replace `1.0.0` with the downloaded version):
 

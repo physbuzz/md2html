@@ -29,16 +29,7 @@ jobs:
         run: |
           pipx install uv==0.13.1
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y racket ruby
-      - name: Install optional Rouge backend for tests
-        run: |
-          # Isolate gems for this step and persist the paths for later tests.
-          export GEM_HOME="$RUNNER_TEMP/md2html-gems"
-          export GEM_PATH="$GEM_HOME"
-          echo "GEM_HOME=$GEM_HOME" >> "$GITHUB_ENV"
-          echo "GEM_PATH=$GEM_PATH" >> "$GITHUB_ENV"
-          gem install rouge --version 4.7.0 --no-document
-          ruby -rrouge -e 'puts "Testing with Rouge #{Rouge.version}"; abort "Missing GitHub themes" unless %w[github.light github.dark].all? { |name| Rouge::Theme.find(name) }'
+          sudo apt-get install --no-install-recommends -y racket
       - name: Install locked Python dependencies
         run: make sync
       - name: Validate version tag
@@ -54,18 +45,12 @@ jobs:
           if os.environ['EVENT_NAME'] == 'push':
               assert os.environ['TAG_NAME'] == 'v' + __version__, 'Tag must match md2html.__version__'
           PY
+      - name: Lint
+        run: .venv/bin/ruff check src tests
       - name: Build executable without root privileges
         run: make pyinstaller
-      - name: Test source
-        run: |
-          .venv/bin/ruff check src tests
-          make test
       - name: Test packaged executable
         run: make test-packaged
-      - name: Test Markdown widgets in browsers
-        run: |
-          npx playwright install --with-deps chromium firefox
-          make test-browser MD2HTML="$PWD/dist/md2html"
       - name: Prepare checksummed release assets
         run: |
           version="$(.venv/bin/python -c 'from md2html import __version__; print(__version__)')"

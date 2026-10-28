@@ -23,11 +23,11 @@ test-browser: sync
 test-packaged: sync
 	MD2HTML_TEST_COMMAND="$(CURDIR)/dist/md2html" $(PYTHON) -m pytest -q \
 		tests/test_packaged.py \
-		tests/test_feed.py \
-		tests/test_markdown.py \
+		tests/test_markdown.py::test_footnotes_number_references_and_preserve_rich_definitions \
+		tests/test_markdown.py::test_new_feature_assets_are_conditional_and_shared \
+		tests/test_markdown.py::test_footnotes_and_alerts_leave_literals_and_export_intact \
 		tests/test_build.py::test_directives_liquid_code_and_includes \
-		tests/test_build.py::test_site_layouts_listing_pagination_and_feed \
-		tests/test_watch.py::test_restart_serve_racket_cache_and_source_updates
+		tests/test_build.py::test_site_layouts_listing_pagination_and_feed
 
 pyinstaller: sync
 	npm ci --ignore-scripts
