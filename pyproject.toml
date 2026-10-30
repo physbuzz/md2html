@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools==84.0.0"]
+requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -13,10 +13,6 @@ dependencies = ["Markdown>=3.10,<4", "pymdown-extensions>=10.21,<11", "python-li
 [project.optional-dependencies]
 dev = ["pytest>=7", "beautifulsoup4>=4", "ruff"]
 build = ["pyinstaller>=6"]
-
-[tool.uv]
-required-version = "==0.13.1"
-build-constraint-dependencies = ["setuptools==84.0.0", "wheel==0.48.0"]
 
 [project.scripts]
 md2html = "md2html.cli:main"

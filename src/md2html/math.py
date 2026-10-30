@@ -3,6 +3,7 @@
 import hashlib
 import html
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -11,6 +12,17 @@ from .workers import Worker
 
 CDN = "https://cdn.jsdelivr.net/npm/"
 VERSION = "4.1.3"
+
+
+def check_node():
+    requirement = "Static CommonHTML math requires Node.js 18 or newer. Install Node.js LTS."
+    try:
+        version = subprocess.check_output(["node", "--version"], text=True, timeout=10).strip()
+        major = int(version.lstrip("v").split(".")[0])
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        raise OSError(requirement) from error
+    if major < 18:
+        raise OSError(f"{requirement} Found {version}.")
 
 
 def npm_root(root, config_root=None):
@@ -105,6 +117,7 @@ class Math:
                 if key not in self.cache:
                     if backend == "mathjax-chtml":
                         if self.worker is None:
+                            check_node()
                             self.worker = Worker(
                                 [
                                     "node",

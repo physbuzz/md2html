@@ -20,7 +20,7 @@ md2html --example-css -       # print editable default CSS to stdout
 
 ## Installation
 
-Building from a checkout requires uv 0.13.1 and Node.js 22.23.3.
+Building from a checkout requires uv, Node.js 18+, and npm 9+.
 
 ```bash
 make install # build and copy it to ~/.local/bin/md2html
@@ -45,7 +45,7 @@ Renderer dependencies:
 
 - **Pygments syntax highlighting** (default): installed with md2html, including `pygments-mathematica` for Wolfram Language.
 - **Rouge syntax highlighting** (optional, `--highlighter rouge`): install Ruby, then `gem install --user-install rouge`.
-- **MathJax**: `make install` bundles its npm packages. Static CommonHTML also requires Node.js. For a Python-package installation, run `npm install mathjax@4.1.3 @mathjax/mathjax-tex-font@4.1.3 @mathjax/mathjax-newcm-font@4.1.3` in your project directory or a parent folder.
+- **MathJax**: `make install` bundles its npm packages. Static CommonHTML also requires Node.js 18+. For a Python-package installation, run `npm install mathjax@4.1.3 @mathjax/mathjax-tex-font@4.1.3 @mathjax/mathjax-newcm-font@4.1.3` in your project directory or a parent folder.
 
 .mm defaults to Metamath syntax highlighting.
 

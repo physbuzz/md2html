@@ -537,13 +537,23 @@ def test_build_indexes_stay_with_sources_and_separate_destinations(cli, put, tmp
     assert not list((tmp_path / "html").rglob(".md2html-cache"))
 
 
+def test_old_node_reports_math_requirement(cli, put, monkeypatch):
+    node = put("bin/node", "#!/bin/sh\necho v10.19.0\n")
+    node.chmod(0o755)
+    monkeypatch.setenv("PATH", str(node.parent))
+    put("a.md", "$A=B$")
+    result = cli("a.md", ok=False)
+    assert "Node.js 18 or newer" in result.stderr
+    assert "v10.19.0" in result.stderr
+
+
 def test_incremental_restart_skips_math_renderer(cli, put, tmp_path, monkeypatch):
     put("a.md", "$x^2$")
     cli("a.md")
     monkeypatch.setenv("PATH", "")
     assert "Built 0 pages" in cli("a.md").stdout
     result = cli("a.md", "--force", ok=False)
-    assert "node" in result.stderr
+    assert "Node.js" in result.stderr
 
 
 def test_standalone_media_attributes_leave_comments_and_scripts_alone(cli, put, tmp_path):

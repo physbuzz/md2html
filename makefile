@@ -30,7 +30,7 @@ test-packaged: sync
 		tests/test_build.py::test_site_layouts_listing_pagination_and_feed
 
 pyinstaller: sync
-	npm ci --ignore-scripts
+	npm ci --ignore-scripts --omit=dev
 	$(PYTHON) -m PyInstaller --clean --noconfirm md2html.spec
 
 install: pyinstaller
