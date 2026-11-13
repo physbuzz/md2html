@@ -35,6 +35,13 @@
       tooltip.style.top = Math.max(8, top) + 'px';
     }
 
+    function previewText(node) {
+      if (node.nodeType === Node.TEXT_NODE) return node.textContent.replace(/[ \t\r\n\f]+/g, ' ');
+      if (node.nodeName === 'PRE') return node.textContent + '\n';
+      var text = Array.from(node.childNodes, previewText).join('');
+      return text + (/^(P|LI|BR)$/.test(node.nodeName) ? '\n' : '');
+    }
+
     references.forEach(function (ref) {
       var target = document.getElementById(ref.getAttribute('href').slice(1));
       if (!target) return;
@@ -43,9 +50,8 @@
         active = ref;
         var copy = target.cloneNode(true);
         copy.querySelectorAll('.footnote-backref, script, style').forEach(function (node) { node.remove(); });
-        // Keep paragraph boundaries in the plain-text preview without copying interactive markup or IDs.
-        copy.querySelectorAll('p, li, pre, br').forEach(function (node) { node.appendChild(document.createTextNode('\n')); });
-        tooltip.textContent = copy.textContent.trim();
+        // Collapse source wrapping while preserving paragraphs, explicit breaks, and code lines.
+        tooltip.textContent = previewText(copy).trim();
         tooltip.href = ref.getAttribute('href');
         ref.setAttribute('aria-describedby', tooltip.id);
         tooltip.hidden = false;

@@ -21,7 +21,8 @@ class MetamathLexer(RegexLexer):
         "root": [
             include("common"),
             (r"\$\[", Comment.Preproc, "include"),
-            (r"\$[{}.]", Punctuation),
+            (r"\$[{}]", Punctuation),
+            (r"\$\.", Keyword),
             (r"\$[cvdfeap]", Keyword, "statement"),
             (r"[^\s$]+", Name.Label),
             (r"\$", Text),
@@ -34,14 +35,14 @@ class MetamathLexer(RegexLexer):
         ],
         "statement": [
             include("common"),
-            (r"\$\.", Punctuation, "#pop"),
+            (r"\$\.", Keyword, "#pop"),
             (r"\$=", Keyword, ("#pop", "proof")),
             (r"[^\s$]+", Name),
             (r"\$", Text),
         ],
         "proof": [
             include("common"),
-            (r"\$\.", Punctuation, "#pop"),
+            (r"\$\.", Keyword, "#pop"),
             (r"\((?=\s|$)", Punctuation, ("#pop", "compressed-labels")),
             (r"[^\s$]+", Name.Label),
             (r"\$", Text),
@@ -49,13 +50,13 @@ class MetamathLexer(RegexLexer):
         "compressed-labels": [
             include("common"),
             (r"\)(?=\s|$)", Punctuation, ("#pop", "compressed")),
-            (r"\$\.", Punctuation, "#pop"),
+            (r"\$\.", Keyword, "#pop"),
             (r"[^\s$]+", Name.Label),
             (r"\$", Text),
         ],
         "compressed": [
             include("common"),
-            (r"\$\.", Punctuation, "#pop"),
+            (r"\$\.", Keyword, "#pop"),
             (r"[^\s$]+", String.Other),
             (r"\$", Text),
         ],

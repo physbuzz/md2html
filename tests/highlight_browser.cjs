@@ -10,7 +10,7 @@ const output = path.resolve(process.argv[2] || 'browser-artifacts/highlight');
 const command = process.argv[3] || path.resolve(__dirname, '../.venv/bin/md2html');
 fs.mkdirSync(output, {recursive:true});
 const source = path.join(output, 'mixed.md');
-fs.writeFileSync(source, '```wl\n(* comment *)\nf[x_] := AbsoluteTiming[Module[{local}, local + x + 42]]; "text"\n```\n\n```cpp\n// comment\nint main() { return 0; }\n```\n');
+fs.writeFileSync(source, '```wl\n(* comment *)\nf[x_] := AbsoluteTiming[Module[{local}, local + x + 42]]; "text"\n```\n\n```cpp\n// comment\nint main() { return 0; }\n```\n\n```mm\n$c wff $.\n```\n');
 const cases = [
   {name:'default', flags:[]},
   {name:'custom-light', flags:['--highlighter-style','monokai']},
@@ -54,6 +54,9 @@ for (const fixture of cases) {
               builtin:color('[data-language="wl"] .nb'),
               variable:color('[data-language="wl"] .nv'),
               punctuation:color('[data-language="wl"] .p'),
+              metamathText:color('[data-language="metamath"] code'),
+              metamathKeywords:[...document.querySelectorAll('[data-language="metamath"] .k')]
+                .map(element => [element.textContent, getComputedStyle(element).color]),
               tokens:[...document.querySelectorAll('.codehilite span')].map(element => {
                 const style = getComputedStyle(element);
                 return [element.textContent,style.color,style.fontWeight,style.fontStyle];
@@ -62,6 +65,9 @@ for (const fixture of cases) {
             };
           });
           assert.equal(state.errors, 0);
+          assert.deepEqual(state.metamathKeywords.map(token => token[0]), ['$c', '$.']);
+          assert.equal(state.metamathKeywords[0][1], state.metamathKeywords[1][1]);
+          assert.notEqual(state.metamathKeywords[1][1], state.metamathText);
           if (fixture.name === 'default') assert.equal(state.background, 'rgb(42, 53, 64)');
           if (!baseline) baseline = state;
           else assert.deepEqual(state, baseline, `${engine}/${fixture.name}/${theme} changed with OS theme`);

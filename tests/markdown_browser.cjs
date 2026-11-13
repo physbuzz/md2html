@@ -11,7 +11,11 @@ const command = process.argv[3] || path.resolve(__dirname, '../.venv/bin/md2html
 fs.mkdirSync(output, {recursive: true});
 const source = path.join(output, 'notes.md');
 fs.writeFileSync(source, fs.readFileSync(path.resolve(__dirname, '../examples/markdown.md'), 'utf8') +
-  '\nA special label[^100%] and a long note[^long].\n\n[^100%]: A percentage label.\n\n[^long]: ' +
+  '\nA wrapped note[^wrapped], a special label[^100%] and a long note[^long].\n\n' +
+  '[^wrapped]: A sentence wrapped\n    across **source lines**.\n\n' +
+  '    Another paragraph with a hard break.  \n    Next line.\n\n' +
+  '        first code line\n        second code line\n\n' +
+  '[^100%]: A percentage label.\n\n[^long]: ' +
   'A longer explanation that should fit within the viewport. '.repeat(120) + '\n');
 const cases = [
   {name: 'standalone', flags: []},
@@ -74,6 +78,13 @@ for (const fixture of cases) {
           const colors = await page.locator('.markdown-alert-title').evaluateAll(nodes =>
             nodes.map(node => getComputedStyle(node).color));
           assert.equal(new Set(colors).size, 5);
+          await page.locator('a.footnote-ref[href="#fn:wrapped"]').hover();
+          await tooltip.waitFor({state: 'visible'});
+          const preview = await tooltip.textContent();
+          assert.match(preview, /A sentence wrapped across source lines\./);
+          assert.match(preview, /source lines\.\s*\n\s*Another paragraph/);
+          assert.match(preview, /hard break\.\s*\n\s*Next line\./);
+          assert.match(preview, /first code line\nsecond code line/);
           await page.emulateMedia({colorScheme: 'dark'});
           await page.evaluate(() => document.documentElement.dataset.theme = 'dark');
           await ref.hover();

@@ -34,12 +34,23 @@ def test_metamath_tokens():
     comments = "".join(value for token, value in tokens if token in Comment.Multiline)
     assert "$p and <html>,\n   continued on another line." in comments
     assert {value for token, value in tokens if token in Keyword} == {
-        "$c", "$v", "$d", "$f", "$e", "$a", "$p", "$=",
+        "$c", "$v", "$d", "$f", "$e", "$a", "$p", "$=", "$.",
     }
     assert (String, "axioms.mm") in tokens
     assert (Name.Label, "ordinary") in tokens
     assert (Name.Label, "wph") in tokens
     assert (String.Other, "ABZC") in tokens
+
+
+@pytest.mark.parametrize("code", ["$.", "$c wff $.", "th $p |- ph $= ax $.",
+                                  "th $p |- ph $= ( ax ) A $."])
+def test_metamath_terminator_highlighting(code):
+    highlighter = Highlighter(Options())
+    try:
+        doc = BeautifulSoup(highlighter.code(code, "mm"), "html.parser")
+        assert any(token.text == "$." for token in doc.select(".k"))
+    finally:
+        highlighter.close()
 
 
 def test_metamath_blocks_have_independent_state():
