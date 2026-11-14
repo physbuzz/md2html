@@ -22,7 +22,7 @@ try {
         console.log(JSON.stringify({base, css: css.slice(base.length)}));
         continue;
       }
-      const node = MathJax.tex2chtml(tex, {display});
+      const node = await MathJax.tex2chtmlPromise(tex, {display});
       // Preserve MathJax's incremental rule order without serializing CSS for every equation.
       MathJax.chtmlStylesheet();
       console.log(JSON.stringify({html: adaptor.outerHTML(node).replace(/\sdata-latex="[^"]*"/g, '')}));

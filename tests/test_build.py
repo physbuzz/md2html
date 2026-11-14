@@ -265,6 +265,38 @@ def test_math_backends(cli, put, tmp_path, backend, marker):
         assert not doc.select("script[data-md2html-math-copy]")
 
 
+@pytest.mark.parametrize("assets", ["standalone", "shared"])
+def test_mathjax_autoloads_href_extension(cli, put, tmp_path, assets):
+    put(
+        "a.md",
+        r"""$$
+\begin{array}{ccc}
+\href{https://us.metamath.org/mpeuni/biimpi.html}{\texttt{biimpi}} &
+\href{https://us.metamath.org/mpeuni/biimpri.html}{\texttt{biimpri}} &
+\href{https://us.metamath.org/mpeuni/impbii.html}{\texttt{impbii}} \\[8pt]
+\displaystyle \frac{\vdash (\varphi\leftrightarrow \psi)}{\vdash (\varphi\to\psi)} &
+\displaystyle \frac{\vdash (\varphi\leftrightarrow \psi)}{\vdash (\psi\to\varphi)} &
+\displaystyle \frac{\vdash (\varphi\to\psi) \quad \vdash (\psi\to\varphi)}{\vdash (\varphi\leftrightarrow\psi)}
+\end{array}
+$$
+
+Following inline math: $x^2$.
+""",
+    )
+    result = cli("a.md", "--math", "mathjax-chtml", "--assets", assets)
+    assert "could not render TeX" not in result.stderr
+    doc = soup(tmp_path / "a.html")
+    display = doc.select_one('.display-math mjx-container[display="true"]')
+    assert display is not None
+    assert [link["href"] for link in display.select("a[href]")] == [
+        f"https://us.metamath.org/mpeuni/{name}.html"
+        for name in ["biimpi", "biimpri", "impbii"]
+    ]
+    assert len(display.select("mjx-mfrac")) == 3
+    assert doc.select_one(".inline-math mjx-container mjx-msup")
+    assert not doc.select("[data-mjx-error]")
+
+
 @pytest.mark.parametrize("assets", ["standalone", "shared", "cdn"])
 @pytest.mark.parametrize("fonts", ["auto", "inline", "local", "remote", "none"])
 def test_font_delivery(cli, put, tmp_path, assets, fonts):
