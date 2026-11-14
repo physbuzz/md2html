@@ -12,6 +12,7 @@ The reason for making Yet Another Static Website Generator is to add some creatu
 ```bash
 md2html -h                             # print all CLI options
 md2html --readme                       # print this README
+md2html --agents                       # print the guide for AI agents writing notes and reports
 md2html --example-config -             # print starter JSON to stdout
 md2html --example-config md2html.json  # save starter JSON as a file
 md2html --example-template -  # print the default page template to stdout
@@ -103,6 +104,8 @@ Configuration can be done via CLI or via a config file `md2html.json`. All CLI o
 - `--math-fonts MODE`: CommonHTML font delivery: `auto`, `inline`, `local`, `remote`, or `none`. JSON: `"math": {"chtml_fonts": ...}`.
 - `--timeout SECONDS`: time limit for each executed example. The default is 120. JSON: `"timeout"`.
 - `--clean`: remove the output directory before building in `site` or `jekyll` mode. It does not apply to independent page builds. JSON: `"clean": true`.
+- `--readme`: print this README.
+- `--agents`: print `md2html-cli-agents.md`, a short guide for AI agents rendering notes and reports with the default page.
 - `--version`, `--help`.
 - `-U, --update`: update a packaged Linux x86-64 executable from the latest stable release and exit; other build options are ignored.
 

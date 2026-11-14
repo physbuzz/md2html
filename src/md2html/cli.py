@@ -38,7 +38,10 @@ EXAMPLE = {
 
 def parser():
     result = argparse.ArgumentParser(
-        description="Build Markdown pages with Liquid, math, and executable snippets.", allow_abbrev=False
+        description="Build Markdown pages with Liquid, math, and executable snippets. "
+        "`md2html FILE.md` writes a finished standalone page; the options below are for sites and custom projects. "
+        "AI agents: run `md2html --agents` before choosing options.",
+        allow_abbrev=False
     )
     result.add_argument("input", nargs="*", default=None)
     result.add_argument("-o", "--output")
@@ -104,7 +107,10 @@ def parser():
     result.add_argument("--highlighter-dark-style")
     for name in ("config", "template", "css"):
         result.add_argument("--example-" + name, metavar="PATH", help="write example, or - for stdout")
-    result.add_argument("--readme", action="store_true")
+    result.add_argument("--readme", action="store_true", help="print the full reference")
+    result.add_argument(
+        "--agents", action="store_true", help="print the guide for AI agents rendering notes and reports"
+    )
     result.add_argument("-U", "--update", action="store_true", help="update the release executable and exit")
     result.add_argument("--version", action="version", version="md2html " + __version__)
     return result
@@ -238,6 +244,9 @@ def main(argv=None):
             if not path.exists():
                 path = Path(sys.prefix) / "share/md2html/readme.md"
             print(path.read_text())
+            return 0
+        if args.pop("agents"):
+            print((PACKAGE / "md2html-cli-agents.md").read_text())
             return 0
         examples = {
             "config": None,

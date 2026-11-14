@@ -557,6 +557,8 @@ def test_scaffolds(cli, tmp_path):
     assert "--reader-page-bg" in cli("--example-css", "-").stdout
     assert "--host" in cli("--help").stdout
     assert "Yet Another" in cli("--readme").stdout
+    assert "--agents" in cli("--help").stdout
+    assert "Reader controls" in cli("--agents").stdout
 
 
 def test_nested_asset_paths_and_frontmatter_styles(cli, put, tmp_path):

@@ -68,6 +68,8 @@ def test_installed_command_outside_checkout(tmp_path, backend):
         assert "data:font/woff2;base64," in str(doc)
     readme = subprocess.run(command + ["--readme"], cwd=tmp_path, text=True, capture_output=True, timeout=30)
     assert readme.returncode == 0 and "Yet Another" in readme.stdout
+    agents = subprocess.run(command + ["--agents"], cwd=tmp_path, text=True, capture_output=True, timeout=30)
+    assert agents.returncode == 0 and "Reader controls" in agents.stdout
 
 
 @pytest.mark.skipif(
