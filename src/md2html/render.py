@@ -76,6 +76,7 @@ class Document:
         self.fonts = set()
         self.warnings = []
         self.toc_token = self.html.put("")
+        self.toc_hide_unnumbered = False
 
     def warn(self, message, *, at_end=True):
         if at_end:
@@ -157,8 +158,9 @@ class Document:
                     else:
                         _, value = frontmatter(value)
                         result.append(self.preprocess(value, path, (*stack, origin)))
-            elif re.fullmatch(r"\s*@toc\s*(?:#.*)?", line.strip()):
+            elif toc := re.fullmatch(r"\s*@toc(?:\(\s*(hn|hide-unnumbered)?\s*\))?\s*(?:#.*)?", line.strip()):
                 self.features.add("toc")
+                self.toc_hide_unnumbered = self.toc_hide_unnumbered or bool(toc[1])
                 result.append("\n\n" + self.toc_token + "\n\n")
             else:
                 if re.match(r"\s*@(?:src|include)\b", line):
@@ -267,38 +269,41 @@ class Document:
         )
 
     def toc(self, headings):
-        roots, exercises = [], []
-        has_exercise_section = False
-        stack = [(0, roots)]
+        """Nest headings into a list; exercises and questions become one compact line per section."""
+        roots, loose = [], []
+        stack = [(0, roots, loose, False)]
+        item_level = None
         for level, title, identifier in headings:
-            plain = html.unescape(re.sub(r"<[^>]+>", "", title)).lower()
-            if plain == "exercises":
-                has_exercise_section = True
-            if plain == "solution":
+            plain = html.unescape(re.sub(r"<[^>]+>", "", title)).strip().lower()
+            if plain == "solution" or (item_level is not None and level > item_level):
                 continue
-            link = f'<a href="#{identifier}">{title}</a>'
-            if re.match(r"exercise\b", plain):
-                exercises.append(f"<span>{link}</span>")
-                continue
+            item_level = None
             while stack[-1][0] >= level:
                 stack.pop()
-            children = []
-            stack[-1][1].append((plain, link, children))
-            stack.append((level, children))
-        exercise_list = '<span class="exercise-list">' + "".join(exercises) + "</span>"
+            _, siblings, items, inside_numbered = stack[-1]
+            link = f'<a href="#{identifier}">{title}</a>'
+            if re.match(r"(?:exercise|question)\b", plain):
+                items.append(f"<span>{link}</span>")
+                item_level = level
+                continue
+            numbered = bool(re.match(r"\d+(?:\.\d+)*\.?(?:\s|$)", plain))
+            if self.toc_hide_unnumbered and inside_numbered and not numbered:
+                continue
+            node = (link, [], [])
+            siblings.append(node)
+            stack.append((level, node[1], node[2], inside_numbered or numbered))
+
+        def compact(items):
+            return '<span class="exercise-list">' + "".join(items) + "</span>"
 
         def listing(nodes):
-            items = []
-            for title, link, children in nodes:
-                extra = (
-                    ' <div class="exercise-container">(' + exercise_list + ")</div>"
-                    if title == "exercises" and exercises
-                    else ""
-                )
-                items.append("<li>" + link + extra + (listing(children) if children else "") + "</li>")
-            return '<ul class="toc-list">' + "".join(items) + "</ul>"
+            rows = []
+            for link, children, items in nodes:
+                extra = ' <div class="exercise-container">(' + compact(items) + ")</div>" if items else ""
+                rows.append("<li>" + link + extra + (listing(children) if children else "") + "</li>")
+            return '<ul class="toc-list">' + "".join(rows) + "</ul>"
 
-        tail = exercise_list if exercises and not has_exercise_section else ""
+        tail = compact(loose) if loose else ""
         return '<div class="table-of-contents"><h2>Directory</h2>' + listing(roots) + tail + "</div>"
 
     def render(self, context):

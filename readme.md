@@ -161,7 +161,7 @@ These are most of the point of this whole project. `@` directives go on their ow
 
 The `@include(file.md)` directive. This includes another markdown file in-place.
 
-The `@toc` directive.  This creates an html table of contents built from the page's headings. Textbook exercises are listed succinctly in the TOC by treating `Exercises`, `Exercise` and `Solution` as special headings. This is done so that if you have 100 problem solutions on a page, you don't have to scroll past 100 newlines. For example:
+The `@toc` directive.  This creates an html table of contents built from the page's headings. Headings that start with `Exercise` or `Question` are listed succinctly beside their parent heading, and the headings beneath them, such as `Solution`, `Hint` and `Answer`, are left out. This is done so that if you have 100 problem solutions on a page, you don't have to scroll past 100 newlines. `@toc(hide-unnumbered)`, or `@toc(hn)` for short, also leaves out unnumbered headings inside numbered sections. For example:
 ```md
 ### Exercises
 #### Exercise 3.1

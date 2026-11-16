@@ -160,6 +160,29 @@ def test_heading_ids_and_formatted_toc_are_document_local(cli, put, tmp_path):
         assert "MD2HTML" not in str(doc) and "wzxhzdk" not in str(doc)
 
 
+def test_toc_compacts_questions_and_filters_numbered_sections(cli, put, tmp_path):
+    put(
+        "page.md",
+        "@toc(hn)\n\n## Introduction\n\n## 1.1 First\n\n### Hints\n\n### 1.1.1 Inner\n\n"
+        "## 1.2 Quiz Questions\n\n### Question 1\n\n#### Hint\n\n#### Answer sketch\n\n"
+        "### Question 2\n\n#### Answer\n\n## Exercises\n\n### Exercise 1\n\n#### Solution\n",
+    )
+    cli("page.md", "--math", "raw")
+    toc = read_html(tmp_path / "page.html").select_one(".table-of-contents")
+    assert [a["href"] for a in toc.select(".toc-list a")] == [
+        "#introduction", "#11-first", "#111-inner", "#12-quiz-questions",
+        "#question-1", "#question-2", "#exercises", "#exercise-1",
+    ]
+    quiz, exercises = toc.select(".exercise-container")
+    assert quiz.find_previous_sibling("a")["href"] == "#12-quiz-questions"
+    assert [a.text for a in quiz.select("a")] == ["Question 1", "Question 2"]
+    assert [a.text for a in exercises.select("a")] == ["Exercise 1"]
+    put("plain.md", "@toc(hide-unnumbered)\n\n## First\n\n### Hints\n\n## Second\n")
+    cli("plain.md", "--math", "raw")
+    toc = read_html(tmp_path / "plain.html").select_one(".table-of-contents")
+    assert [a["href"] for a in toc.select("a")] == ["#first", "#hints", "#second"]
+
+
 def test_native_list_indentation_and_emphasis(cli, put, tmp_path):
     put("page.md", "- parent\n    - child\n\nword_with_underscores and *emphasis*\n")
     cli("page.md", "--math", "raw")
